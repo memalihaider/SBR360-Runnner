@@ -1123,7 +1123,7 @@
 //     }
 
 //     // Footer with page numbers
-//     const totalPages = pdf.internal.getNumberOfPages();
+//     const totalPages = (pdf.internal as any).getNumberOfPages();
 //     for (let i = 1; i <= totalPages; i++) {
 //       pdf.setPage(i);
 //       pdf.setFontSize(8);
@@ -4237,7 +4237,7 @@
 //       }
 
 //       // Footer with page numbers
-//       const totalPages = pdf.internal.getNumberOfPages();
+//       const totalPages = (pdf.internal as any).getNumberOfPages();
 //       for (let i = 1; i <= totalPages; i++) {
 //         pdf.setPage(i);
 //         pdf.setFontSize(8);
@@ -7508,8 +7508,8 @@ This solution will transform your operations, improve efficiency, and position y
         yPosition += 10;
       }
 
-      // Footer with page numbers
-      const totalPages = pdf.internal.getNumberOfPages();
+  // Footer with page numbers
+  const totalPages = (pdf.internal as any).getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         pdf.setFontSize(8);
@@ -8015,7 +8015,6 @@ This solution will transform your operations, improve efficiency, and position y
             {productsLoading ? 'Loading...' : 'Add Product'}
           </Button>
         </div>
-
         {productsLoading && (
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -8128,7 +8127,7 @@ This solution will transform your operations, improve efficiency, and position y
                       />
                       <Button
                         onClick={() => {
-                          const newImages = product.images.filter((_, i) => i !== imgIndex);
+                          const newImages = product.images.filter((_: any, i: number) => i !== imgIndex);
                           updateProductDetail(product.id, { images: newImages });
                         }}
                         variant="outline"
@@ -9165,7 +9164,7 @@ This solution will transform your operations, improve efficiency, and position y
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    const newSteps = section.data.nextSteps.filter((_, i) => i !== index);
+                    const newSteps = section.data.nextSteps.filter((_: any, i: number) => i !== index);
                     updateSectionData(section.id, { nextSteps: newSteps });
                   }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"

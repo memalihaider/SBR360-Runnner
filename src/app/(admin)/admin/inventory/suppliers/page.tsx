@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Vendor, MainCategory, Product } from '@/types';
+import { Vendor, MainCategory, Product, VendorStatus } from '@/types';
 import { toast } from 'sonner';
 import { supplierService, supplierStatsService, dataService } from '@/lib/supplierService';
 import { Edit, Trash2, Loader2, Plus, Search, Mail, Phone, X } from 'lucide-react';
@@ -55,7 +55,7 @@ export default function SuppliersPage() {
     zipCode: '',
     paymentTerms: '',
     creditDays: 30,
-    status: 'active' as 'active' | 'inactive',
+  status: 'active' as VendorStatus,
     productCategories: [] as string[],
     suppliedProducts: [] as string[],
     rating: 4.5,

@@ -408,6 +408,8 @@ export interface Vendor {
   
   // Categories
   productCategories: string[]; // Now array of strings for hierarchical categories
+  // Optional list of product IDs or SKUs this vendor supplies
+  suppliedProducts?: string[];
   
   status: VendorStatus;
   isActive: boolean;
@@ -713,7 +715,8 @@ export type QuotationStatus =
   | 'under_review'
   | 'approved'
   | 'rejected'
-  | 'expired';
+  | 'expired'
+  | 'converted';
 
 export interface Quotation {
   id: string;

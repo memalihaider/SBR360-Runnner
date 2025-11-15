@@ -2092,7 +2092,7 @@ function CustomerProfileDialog({ lead, isOpen, onClose }: { lead: any; isOpen: b
                     ))}
                     {customerProjects.length > 3 && (
                       <div className="text-center pt-2">
-                        <Button variant="outline" size="sm" onClick={() => document.querySelector('[data-value="projects"]')?.click()}>
+                        <Button variant="outline" size="sm" onClick={() => (document.querySelector('[data-value="projects"]') as HTMLElement | null)?.click()}>
                           View All {customerProjects.length} Projects
                         </Button>
                       </div>

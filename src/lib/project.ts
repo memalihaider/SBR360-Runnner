@@ -14,7 +14,7 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase/firestore";
-import db from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 
 /* ---------------- Firestore Collection Reference ---------------- */
 const projectsCollection = collection(getFirestore(), "projects");

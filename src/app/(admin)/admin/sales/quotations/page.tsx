@@ -1298,7 +1298,7 @@ export default function AdminSalesQuotationsPage() {
       const newId = await saveQuotationToFirebase(newQuotation);
       
       const updatedQuotations = [{ id: newId, ...newQuotation }, ...quotations];
-      setQuotations(updatedQuotations);
+  setQuotations(updatedQuotations as Quotation[]);
       alert(`Quotation duplicated successfully! New number: ${newQuotation.quotationNumber}`);
     } catch (error) {
       console.error('Error duplicating quotation:', error);
@@ -1317,7 +1317,7 @@ export default function AdminSalesQuotationsPage() {
       const updatedQuotations = quotations.map(q => 
         q.id === quotation.id ? { ...q, status: 'converted', updatedAt: new Date().toISOString() } : q
       );
-      setQuotations(updatedQuotations);
+  setQuotations(updatedQuotations as Quotation[]);
       alert(`Quotation ${quotation.quotationNumber} converted to invoice successfully!`);
     } catch (error) {
       console.error('Error converting quotation to invoice:', error);
@@ -1341,7 +1341,7 @@ export default function AdminSalesQuotationsPage() {
       
       // Local state update karein
       const updatedQuotations = quotations.filter(q => q.id !== quotation.id);
-      setQuotations(updatedQuotations);
+  setQuotations(updatedQuotations as Quotation[]);
       
       console.log('Quotation deleted successfully from both frontend and backend');
       alert(`Quotation ${quotation.quotationNumber} deleted successfully!`);
@@ -1372,7 +1372,7 @@ export default function AdminSalesQuotationsPage() {
       const updatedQuotations = quotations.map(q => 
         q.id === quotation.id ? { ...q, status: 'sent', updatedAt: new Date().toISOString() } : q
       );
-      setQuotations(updatedQuotations);
+  setQuotations(updatedQuotations as Quotation[]);
       alert(`Quotation ${quotation.quotationNumber} sent successfully!`);
     } catch (error) {
       console.error('Error sending quotation:', error);

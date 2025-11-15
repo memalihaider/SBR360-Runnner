@@ -266,6 +266,10 @@ export default function AdminInventoryProductsPage() {
           isSerialTracked: productForm.isSerialTracked || false,
           isBatchTracked: productForm.isBatchTracked || false,
           margin: 0, // Will be calculated in service
+          specifications: productForm.specifications || {},
+          images: productForm.images || [],
+          preferredVendor: productForm.preferredVendor || '',
+          alternateVendors: productForm.alternateVendors || [],
           createdAt: new Date(),
           updatedAt: new Date()
         };

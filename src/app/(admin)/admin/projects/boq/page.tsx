@@ -463,8 +463,8 @@ export default function AdminBOQPage() {
         updatedAt: serverTimestamp(),
       };
       
-      delete duplicatedBOQ.id;
-      await addDoc(collection(db, 'boqs'), duplicatedBOQ);
+  const { id: _id, ...duplicatedPayload } = duplicatedBOQ;
+  await addDoc(collection(db, 'boqs'), duplicatedPayload);
       toast.success('BOQ duplicated successfully');
     } catch (error) {
       console.error('Error duplicating BOQ:', error);

@@ -171,7 +171,8 @@ export default function ProjectTasksPage() {
     };
 
     try {
-      await updateDoc(doc(db, 'tasks', selectedTask.id), updatedTask);
+      const { id: _id, ...updatedPayload } = updatedTask as any;
+      await updateDoc(doc(db, 'tasks', selectedTask.id), updatedPayload as any);
       setTasks(prev => prev.map(task => 
         task.id === selectedTask.id ? { ...updatedTask, id: selectedTask.id } : task
       ));
@@ -286,9 +287,10 @@ export default function ProjectTasksPage() {
     };
 
     try {
-      await updateDoc(doc(db, 'tasks', selectedTask.id), updatedTask);
+      const { id: _id, ...updatedPayload } = updatedTask as any;
+      await updateDoc(doc(db, 'tasks', selectedTask.id), updatedPayload as any);
       setTasks(prev => prev.map(task => 
-        task.id === selectedTask.id ? { ...updatedTask, id: selectedTask.id } : task
+        task.id === selectedTask.id ? { ...updatedPayload, id: selectedTask.id } : task
       ));
       setIsEditDialogOpen(false);
       setSelectedTask(null);
