@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Plus,
@@ -21,20 +20,36 @@ import {
   Tag,
   Settings,
   AlertCircle,
-  CheckCircle,
-  XCircle,
-  MoreHorizontal,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
-import mockData from '@/lib/mock-data';
-import { MainCategory, SubCategory } from '@/types';
+import { MainCategory, SubCategory, Product } from '@/types';
 import { toast } from 'sonner';
+import { 
+  mainCategoryService, 
+  subCategoryService, 
+  productService, 
+  statsService,
+  deleteService 
+} from '@/lib/categoryService';
 
 export default function AdminInventoryCategoriesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMainCategory, setSelectedMainCategory] = useState<MainCategory | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Data states
+  const [mainCategories, setMainCategories] = useState<MainCategory[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [overallStats, setOverallStats] = useState({
+    mainCategories: 0,
+    subCategories: 0,
+    products: 0
+  });
 
   // Dialog states
   const [isAddMainCategoryDialogOpen, setIsAddMainCategoryDialogOpen] = useState(false);
@@ -62,13 +77,52 @@ export default function AdminInventoryCategoriesPage() {
 
   const [selectedSubCategory, setSelectedSubCategory] = useState<SubCategory | null>(null);
 
+  // Load data on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [mainCats, subCats, prods, stats] = await Promise.all([
+        mainCategoryService.getAllMainCategories(),
+        subCategoryService.getAllSubCategories(),
+        productService.getAllProducts(),
+        statsService.getOverallStats()
+      ]);
+      setMainCategories(mainCats);
+      setSubCategories(subCats);
+      setProducts(prods);
+      setOverallStats(stats);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast.error('Failed to load categories');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter categories based on search
   const filteredMainCategories = useMemo(() => {
-    return mockData.mainCategories.filter(category =>
+    return mainCategories.filter(category =>
       category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       category.description?.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, mainCategories]);
+
+  // Helper functions
+  const getSubCategoriesByMainCategory = (mainCategoryId: string) => {
+    return subCategories.filter(sub => sub.mainCategoryId === mainCategoryId);
+  };
+
+  const getProductsByMainCategory = (mainCategoryId: string) => {
+    return products.filter(product => product.mainCategoryId === mainCategoryId);
+  };
+
+  const getProductsBySubCategory = (subCategoryId: string) => {
+    return products.filter(product => product.subCategoryId === subCategoryId);
+  };
 
   const toggleCategoryExpansion = (categoryId: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -80,6 +134,7 @@ export default function AdminInventoryCategoriesPage() {
     setExpandedCategories(newExpanded);
   };
 
+  // Main Category Handlers
   const handleAddMainCategory = () => {
     setMainCategoryForm({
       name: '',
@@ -101,6 +156,69 @@ export default function AdminInventoryCategoriesPage() {
     setIsDeleteMainCategoryDialogOpen(true);
   };
 
+  const handleSaveMainCategory = async () => {
+    if (!mainCategoryForm.name?.trim()) {
+      toast.error('Please enter a category name');
+      return;
+    }
+
+    try {
+      if (isAddMainCategoryDialogOpen) {
+        const newCategory: Omit<MainCategory, 'id'> = {
+          name: mainCategoryForm.name!,
+          description: mainCategoryForm.description || '',
+          icon: mainCategoryForm.icon || '',
+          isActive: mainCategoryForm.isActive ?? true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        await mainCategoryService.createMainCategory(newCategory);
+        toast.success(`Main category "${mainCategoryForm.name}" added successfully!`);
+      } else if (isEditMainCategoryDialogOpen && selectedMainCategory) {
+        await mainCategoryService.updateMainCategory(selectedMainCategory.id, mainCategoryForm);
+        toast.success(`Main category "${mainCategoryForm.name}" updated successfully!`);
+      }
+      
+      await loadData();
+      setIsAddMainCategoryDialogOpen(false);
+      setIsEditMainCategoryDialogOpen(false);
+      setMainCategoryForm({});
+      setSelectedMainCategory(null);
+    } catch (error) {
+      console.error('Error saving main category:', error);
+      toast.error('Failed to save category');
+    }
+  };
+
+  // SIMPLIFIED DELETE HANDLERS - Working Version
+  const handleConfirmDeleteMainCategory = async () => {
+    if (!selectedMainCategory) return;
+
+    try {
+      setDeleting(selectedMainCategory.id);
+      
+      // 1. First delete all sub-categories under this main category
+      const subCategoriesToDelete = getSubCategoriesByMainCategory(selectedMainCategory.id);
+      for (const subCategory of subCategoriesToDelete) {
+        await subCategoryService.deleteSubCategory(subCategory.id);
+      }
+      
+      // 2. Then delete the main category
+      await mainCategoryService.deleteMainCategory(selectedMainCategory.id);
+      
+      toast.success(`Main category "${selectedMainCategory.name}" deleted successfully!`);
+      await loadData();
+      setIsDeleteMainCategoryDialogOpen(false);
+      setSelectedMainCategory(null);
+    } catch (error) {
+      console.error('Error deleting main category:', error);
+      toast.error('Failed to delete category. Please try again.');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  // Sub Category Handlers
   const handleAddSubCategory = (mainCategoryId: string) => {
     setSubCategoryForm({
       name: '',
@@ -123,23 +241,7 @@ export default function AdminInventoryCategoriesPage() {
     setIsDeleteSubCategoryDialogOpen(true);
   };
 
-  const handleSaveMainCategory = () => {
-    if (!mainCategoryForm.name?.trim()) {
-      toast.error('Please enter a category name');
-      return;
-    }
-
-    // In a real app, this would save to the database
-    console.log('Saving main category:', mainCategoryForm);
-    toast.success(`Main category "${mainCategoryForm.name}" ${isAddMainCategoryDialogOpen ? 'added' : 'updated'} successfully!`);
-
-    setIsAddMainCategoryDialogOpen(false);
-    setIsEditMainCategoryDialogOpen(false);
-    setMainCategoryForm({});
-    setSelectedMainCategory(null);
-  };
-
-  const handleSaveSubCategory = () => {
+  const handleSaveSubCategory = async () => {
     if (!subCategoryForm.name?.trim()) {
       toast.error('Please enter a sub-category name');
       return;
@@ -150,43 +252,79 @@ export default function AdminInventoryCategoriesPage() {
       return;
     }
 
-    // In a real app, this would save to the database
-    console.log('Saving sub category:', subCategoryForm);
-    toast.success(`Sub-category "${subCategoryForm.name}" ${isAddSubCategoryDialogOpen ? 'added' : 'updated'} successfully!`);
-
-    setIsAddSubCategoryDialogOpen(false);
-    setIsEditSubCategoryDialogOpen(false);
-    setSubCategoryForm({});
-    setSelectedSubCategory(null);
+    try {
+      if (isAddSubCategoryDialogOpen) {
+        const newSubCategory: Omit<SubCategory, 'id'> = {
+          name: subCategoryForm.name!,
+          description: subCategoryForm.description || '',
+          mainCategoryId: subCategoryForm.mainCategoryId!,
+          icon: subCategoryForm.icon || '',
+          isActive: subCategoryForm.isActive ?? true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        await subCategoryService.createSubCategory(newSubCategory);
+        toast.success(`Sub-category "${subCategoryForm.name}" added successfully!`);
+      } else if (isEditSubCategoryDialogOpen && selectedSubCategory) {
+        await subCategoryService.updateSubCategory(selectedSubCategory.id, subCategoryForm);
+        toast.success(`Sub-category "${subCategoryForm.name}" updated successfully!`);
+      }
+      
+      await loadData();
+      setIsAddSubCategoryDialogOpen(false);
+      setIsEditSubCategoryDialogOpen(false);
+      setSubCategoryForm({});
+      setSelectedSubCategory(null);
+    } catch (error) {
+      console.error('Error saving sub category:', error);
+      toast.error('Failed to save sub-category');
+    }
   };
 
-  const handleConfirmDeleteMainCategory = () => {
-    // In a real app, this would delete from the database
-    console.log('Deleting main category:', selectedMainCategory?.id);
-    toast.success(`Main category "${selectedMainCategory?.name}" deleted successfully!`);
+  const handleConfirmDeleteSubCategory = async () => {
+    if (!selectedSubCategory) return;
 
-    setIsDeleteMainCategoryDialogOpen(false);
-    setSelectedMainCategory(null);
+    try {
+      setDeleting(selectedSubCategory.id);
+      
+      // Simply delete the sub category
+      await subCategoryService.deleteSubCategory(selectedSubCategory.id);
+      
+      toast.success(`Sub-category "${selectedSubCategory.name}" deleted successfully!`);
+      await loadData();
+      setIsDeleteSubCategoryDialogOpen(false);
+      setSelectedSubCategory(null);
+    } catch (error) {
+      console.error('Error deleting sub category:', error);
+      toast.error('Failed to delete sub-category. Please try again.');
+    } finally {
+      setDeleting(null);
+    }
   };
 
-  const handleConfirmDeleteSubCategory = () => {
-    // In a real app, this would delete from the database
-    console.log('Deleting sub category:', selectedSubCategory?.id);
-    toast.success(`Sub-category "${selectedSubCategory?.name}" deleted successfully!`);
-
-    setIsDeleteSubCategoryDialogOpen(false);
-    setSelectedSubCategory(null);
-  };
-
+  // Stats calculation
   const getCategoryStats = (mainCategoryId: string) => {
-    const subCategories = mockData.getSubCategoriesByMainCategory(mainCategoryId);
-    const products = mockData.getProductsByMainCategory(mainCategoryId);
+    const subCats = getSubCategoriesByMainCategory(mainCategoryId);
+    const prods = getProductsByMainCategory(mainCategoryId);
+    const activeProducts = prods.filter(p => p.status === 'active');
+    
     return {
-      subCategories: subCategories.length,
-      products: products.length,
-      activeProducts: products.filter(p => p.status === 'active').length
+      subCategories: subCats.length,
+      products: prods.length,
+      activeProducts: activeProducts.length
     };
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-red-600" />
+          <p className="mt-2 text-gray-600">Loading categories...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -214,7 +352,7 @@ export default function AdminInventoryCategoriesPage() {
             <Folder className="h-5 w-5 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">{mockData.mainCategories.length}</div>
+            <div className="text-3xl font-bold text-gray-900">{overallStats.mainCategories}</div>
             <p className="text-sm text-gray-500 mt-1">Active categories</p>
           </CardContent>
         </Card>
@@ -225,7 +363,7 @@ export default function AdminInventoryCategoriesPage() {
             <Tag className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">{mockData.subCategories.length}</div>
+            <div className="text-3xl font-bold text-gray-900">{overallStats.subCategories}</div>
             <p className="text-sm text-gray-500 mt-1">Total sub-categories</p>
           </CardContent>
         </Card>
@@ -236,7 +374,7 @@ export default function AdminInventoryCategoriesPage() {
             <Settings className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-900">{mockData.products.length}</div>
+            <div className="text-3xl font-bold text-gray-900">{overallStats.products}</div>
             <p className="text-sm text-gray-500 mt-1">Across all categories</p>
           </CardContent>
         </Card>
@@ -277,7 +415,7 @@ export default function AdminInventoryCategoriesPage() {
           <div className="space-y-4">
             {filteredMainCategories.map((mainCategory) => {
               const stats = getCategoryStats(mainCategory.id);
-              const subCategories = mockData.getSubCategoriesByMainCategory(mainCategory.id);
+              const subCategoriesList = getSubCategoriesByMainCategory(mainCategory.id);
               const isExpanded = expandedCategories.has(mainCategory.id);
 
               return (
@@ -333,8 +471,13 @@ export default function AdminInventoryCategoriesPage() {
                           size="sm"
                           onClick={() => handleDeleteMainCategory(mainCategory)}
                           className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                          disabled={deleting === mainCategory.id}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deleting === mainCategory.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -343,10 +486,10 @@ export default function AdminInventoryCategoriesPage() {
                   {/* Sub Categories */}
                   {isExpanded && (
                     <div className="bg-gray-50">
-                      {subCategories.length > 0 ? (
+                      {subCategoriesList.length > 0 ? (
                         <div className="divide-y divide-gray-200">
-                          {subCategories.map((subCategory) => {
-                            const subCategoryProducts = mockData.getProductsBySubCategory(subCategory.id);
+                          {subCategoriesList.map((subCategory) => {
+                            const subCategoryProducts = getProductsBySubCategory(subCategory.id);
                             const activeProducts = subCategoryProducts.filter(p => p.status === 'active');
 
                             return (
@@ -380,8 +523,13 @@ export default function AdminInventoryCategoriesPage() {
                                       size="sm"
                                       onClick={() => handleDeleteSubCategory(subCategory)}
                                       className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                                      disabled={deleting === subCategory.id}
                                     >
-                                      <Trash2 className="h-4 w-4" />
+                                      {deleting === subCategory.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
                                     </Button>
                                   </div>
                                 </div>
@@ -544,7 +692,7 @@ export default function AdminInventoryCategoriesPage() {
                   <SelectValue placeholder="Select main category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockData.mainCategories.map((category) => (
+                  {mainCategories.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
                       {category.icon} {category.name}
                     </SelectItem>
@@ -616,9 +764,22 @@ export default function AdminInventoryCategoriesPage() {
             <Button variant="outline" onClick={() => setIsDeleteMainCategoryDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmDeleteMainCategory} className="bg-red-600 hover:bg-red-700 text-white">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Category
+            <Button 
+              onClick={handleConfirmDeleteMainCategory} 
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={deleting === selectedMainCategory?.id}
+            >
+              {deleting === selectedMainCategory?.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Category
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -649,9 +810,22 @@ export default function AdminInventoryCategoriesPage() {
             <Button variant="outline" onClick={() => setIsDeleteSubCategoryDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmDeleteSubCategory} className="bg-red-600 hover:bg-red-700 text-white">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Sub Category
+            <Button 
+              onClick={handleConfirmDeleteSubCategory} 
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={deleting === selectedSubCategory?.id}
+            >
+              {deleting === selectedSubCategory?.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Sub Category
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

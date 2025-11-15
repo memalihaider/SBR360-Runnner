@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -25,18 +24,12 @@ import {
   Clock,
   AlertTriangle,
   DollarSign,
-  Calendar,
-  User,
-  Truck,
-  FileText,
-  MoreHorizontal,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import mockData from '@/lib/mock-data';
 import { ReturnRequest, ReturnStatus, ReturnType, ReturnReason } from '@/types';
 import { toast } from 'sonner';
-import { faker } from '@faker-js/faker';
+import { returnsService, productsService, generateReturnNumber, Product } from '@/lib/returns';
 
 export default function AdminInventoryReturnsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,14 +37,26 @@ export default function AdminInventoryReturnsPage() {
   const [typeFilter, setTypeFilter] = useState<ReturnType | 'all'>('all');
   const [selectedReturn, setSelectedReturn] = useState<ReturnRequest | null>(null);
   const [expandedReturns, setExpandedReturns] = useState<Set<string>>(new Set());
+  
+  // Real-time data states
+  const [returns, setReturns] = useState<ReturnRequest[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    processed: 0,
+    totalValue: 0
+  });
 
   // Dialog states
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isProcessDialogOpen, setIsProcessDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-    // Create return form state
+  // Create return form state
   const [createForm, setCreateForm] = useState({
     type: '' as ReturnType,
     customerId: '',
@@ -79,9 +84,47 @@ export default function AdminInventoryReturnsPage() {
     trackingNumber: ''
   });
 
+  // Edit form state
+  const [editForm, setEditForm] = useState({
+    priority: 'normal' as 'low' | 'normal' | 'high' | 'urgent',
+    returnMethod: 'drop_off' as 'pickup' | 'drop_off' | 'mail',
+    customerNotes: '',
+    items: [] as Array<{
+      productId: string;
+      quantity: number;
+      reason: ReturnReason;
+      condition: 'new' | 'used' | 'damaged' | 'defective';
+      notes: string;
+    }>
+  });
+
+  // Load real-time data
+  useEffect(() => {
+    // Real-time returns listener
+    const unsubscribeReturns = returnsService.getReturnsRealTime((returnsData) => {
+      setReturns(returnsData);
+    });
+
+    // Real-time products listener for dropdown
+    const unsubscribeProducts = productsService.getProductsRealTime((productsData) => {
+      setProducts(productsData);
+    });
+
+    // Real-time stats listener
+    const unsubscribeStats = returnsService.getReturnsStatsRealTime((statsData) => {
+      setStats(statsData);
+    });
+
+    return () => {
+      unsubscribeReturns();
+      unsubscribeProducts();
+      unsubscribeStats();
+    };
+  }, []);
+
   // Filter returns based on search and filters
   const filteredReturns = useMemo(() => {
-    return mockData.returnRequests.filter(returnRequest => {
+    return returns.filter(returnRequest => {
       const matchesSearch = returnRequest.returnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           returnRequest.items.some(item => item.productName.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -90,7 +133,7 @@ export default function AdminInventoryReturnsPage() {
 
       return matchesSearch && matchesStatus && matchesType;
     });
-  }, [searchTerm, statusFilter, typeFilter]);
+  }, [returns, searchTerm, statusFilter, typeFilter]);
 
   const toggleReturnExpansion = (returnId: string) => {
     const newExpanded = new Set(expandedReturns);
@@ -143,107 +186,171 @@ export default function AdminInventoryReturnsPage() {
     setCreateForm({ ...createForm, items: updatedItems });
   };
 
-  const handleSaveCreateReturn = () => {
-    if (!createForm.type) {
-      toast.error('Please select return type');
-      return;
-    }
-
-    if (createForm.items.length === 0) {
-      toast.error('Please add at least one item to return');
-      return;
-    }
-
-    // Validate all items have required fields
-    for (const item of createForm.items) {
-      if (!item.productId || item.quantity <= 0) {
-        toast.error('Please fill in all required fields for return items');
+  const handleSaveCreateReturn = async () => {
+    try {
+      if (!createForm.type) {
+        toast.error('Please select return type');
         return;
       }
-    }
 
-    // Calculate totals and create return request
-    let totalQuantity = 0;
-    let totalValue = 0;
-    const returnItems = createForm.items.map(item => {
-      const product = mockData.getProductById(item.productId);
-      if (!product) return null;
-
-      const quantity = item.quantity;
-      const unitPrice = product.sellingPrice;
-      const itemTotal = quantity * unitPrice;
-
-      totalQuantity += quantity;
-      totalValue += itemTotal;
-
-      return {
-        id: faker.string.uuid(),
-        productId: item.productId,
-        productName: product.name,
-        productSku: product.sku,
-        quantity,
-        unitPrice,
-        totalValue: itemTotal,
-        reason: item.reason,
-        condition: item.condition,
-        notes: item.notes,
-        serialNumbers: product.isSerialTracked ? Array.from({ length: quantity }, () => faker.string.alphanumeric(10)) : undefined,
-        batchNumber: product.isBatchTracked ? faker.string.alphanumeric(8) : undefined
-      };
-    }).filter(Boolean) as any[];
-
-    const returnRequest: ReturnRequest = {
-      id: faker.string.uuid(),
-      returnNumber: `RTN-${faker.string.numeric(6)}`,
-      type: createForm.type,
-      referenceType: createForm.referenceType === 'none' ? undefined : createForm.referenceType || undefined,
-      referenceId: createForm.referenceId || undefined,
-      customerId: createForm.type === 'customer_return' ? createForm.customerId || faker.string.uuid() : undefined,
-      vendorId: createForm.type === 'vendor_return' ? createForm.vendorId || faker.string.uuid() : undefined,
-      items: returnItems,
-      totalQuantity,
-      totalValue,
-      status: 'pending',
-      priority: createForm.priority,
-      requestedDate: new Date(),
-      returnMethod: createForm.returnMethod,
-      customerNotes: createForm.customerNotes || undefined,
-      createdBy: faker.string.uuid(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    // Reduce stock for each item (when creating return, stock decreases)
-    createForm.items.forEach(item => {
-      const product = mockData.getProductById(item.productId);
-      if (product) {
-        // In a real app, this would update the database
-        console.log(`Reducing stock for ${product.name}: ${product.currentStock} - ${item.quantity} = ${product.currentStock - item.quantity}`);
-        // product.currentStock -= item.quantity; // This would be done in the database
+      if (createForm.items.length === 0) {
+        toast.error('Please add at least one item to return');
+        return;
       }
-    });
 
-    // In a real app, this would save to the database
-    console.log('Creating return request:', returnRequest);
-    toast.success(`Return request ${returnRequest.returnNumber} created successfully! Stock has been reduced.`);
+      // Validate all items have required fields
+      for (const item of createForm.items) {
+        if (!item.productId || item.quantity <= 0) {
+          toast.error('Please fill in all required fields for return items');
+          return;
+        }
 
-    setIsCreateDialogOpen(false);
-    setCreateForm({
-      type: '' as ReturnType,
-      customerId: '',
-      vendorId: '',
-      referenceType: 'none' as 'none' | 'sales_order' | 'purchase_order' | '',
-      referenceId: '',
-      priority: 'normal',
-      returnMethod: 'drop_off',
-      customerNotes: '',
-      items: []
-    });
+        // Check stock availability
+        const product = products.find(p => p.id === item.productId);
+        if (!product) {
+          toast.error(`Product not found: ${item.productId}`);
+          return;
+        }
+
+        if (product.currentStock < item.quantity) {
+          toast.error(`Insufficient stock for ${product.name}. Available: ${product.currentStock}, Requested: ${item.quantity}`);
+          return;
+        }
+      }
+
+      // Calculate totals and create return request
+      let totalQuantity = 0;
+      let totalValue = 0;
+      const returnItems = await Promise.all(
+        createForm.items.map(async (item) => {
+          const product = products.find(p => p.id === item.productId);
+          if (!product) return null;
+
+          const quantity = item.quantity;
+          const unitPrice = product.sellingPrice;
+          const itemTotal = quantity * unitPrice;
+
+          totalQuantity += quantity;
+          totalValue += itemTotal;
+
+          // Update product stock in Firebase
+          const newStock = product.currentStock - quantity;
+          await productsService.updateProductStock(item.productId, newStock);
+
+          return {
+            productId: item.productId,
+            productName: product.name,
+            productSku: product.sku,
+            quantity,
+            unitPrice,
+            totalValue: itemTotal,
+            reason: item.reason,
+            condition: item.condition,
+            notes: item.notes,
+            serialNumbers: product.isSerialTracked ? Array.from({ length: quantity }, () => 
+              Math.random().toString(36).substr(2, 10).toUpperCase()
+            ) : undefined,
+            batchNumber: product.isBatchTracked ? 
+              `BATCH-${Math.random().toString(36).substr(2, 8).toUpperCase()}` : undefined
+          };
+        })
+      );
+
+      const validReturnItems = returnItems.filter(Boolean) as any[];
+
+      const returnRequest: Omit<ReturnRequest, 'id' | 'createdAt' | 'updatedAt'> = {
+        returnNumber: generateReturnNumber(),
+        type: createForm.type,
+        referenceType: createForm.referenceType === 'none' ? undefined : createForm.referenceType || undefined,
+        referenceId: createForm.referenceId || undefined,
+        customerId: createForm.type === 'customer_return' ? createForm.customerId || undefined : undefined,
+        vendorId: createForm.type === 'vendor_return' ? createForm.vendorId || undefined : undefined,
+        items: validReturnItems,
+        totalQuantity,
+        totalValue,
+        status: 'pending',
+        priority: createForm.priority,
+        requestedDate: new Date(),
+        returnMethod: createForm.returnMethod,
+        customerNotes: createForm.customerNotes || undefined,
+        createdBy: 'current-user-id' // In real app, get from auth
+      };
+
+      await returnsService.createReturn(returnRequest);
+      
+      toast.success(`Return request ${returnRequest.returnNumber} created successfully! Stock has been reduced.`);
+
+      setIsCreateDialogOpen(false);
+      setCreateForm({
+        type: '' as ReturnType,
+        customerId: '',
+        vendorId: '',
+        referenceType: 'none' as 'none' | 'sales_order' | 'purchase_order' | '',
+        referenceId: '',
+        priority: 'normal',
+        returnMethod: 'drop_off',
+        customerNotes: '',
+        items: []
+      });
+    } catch (error) {
+      console.error('Error creating return:', error);
+      toast.error('Failed to create return request');
+    }
   };
 
   const handleViewReturn = (returnRequest: ReturnRequest) => {
     setSelectedReturn(returnRequest);
     setIsViewDialogOpen(true);
+  };
+
+  const handleEditReturn = (returnRequest: ReturnRequest) => {
+    setSelectedReturn(returnRequest);
+    setEditForm({
+      priority: returnRequest.priority,
+      returnMethod: returnRequest.returnMethod,
+      customerNotes: returnRequest.customerNotes || '',
+      items: returnRequest.items.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        reason: item.reason,
+        condition: item.condition as 'new' | 'used' | 'damaged' | 'defective',
+        notes: item.notes || ''
+      }))
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEditReturn = async () => {
+    if (!selectedReturn) return;
+
+    try {
+      await returnsService.updateReturn(selectedReturn.id, {
+        priority: editForm.priority,
+        returnMethod: editForm.returnMethod,
+        customerNotes: editForm.customerNotes || undefined
+      });
+
+      toast.success(`Return ${selectedReturn.returnNumber} updated successfully!`);
+      setIsEditDialogOpen(false);
+      setSelectedReturn(null);
+    } catch (error) {
+      console.error('Error updating return:', error);
+      toast.error('Failed to update return');
+    }
+  };
+
+  const handleDeleteReturn = async (returnRequest: ReturnRequest) => {
+    if (!confirm(`Are you sure you want to delete return ${returnRequest.returnNumber}?`)) {
+      return;
+    }
+
+    try {
+      await returnsService.deleteReturn(returnRequest.id);
+      toast.success(`Return ${returnRequest.returnNumber} deleted successfully!`);
+    } catch (error) {
+      console.error('Error deleting return:', error);
+      toast.error('Failed to delete return');
+    }
   };
 
   const handleProcessReturn = (returnRequest: ReturnRequest) => {
@@ -263,53 +370,83 @@ export default function AdminInventoryReturnsPage() {
     setIsRejectDialogOpen(true);
   };
 
-  const handleSaveProcess = () => {
-    if (!processForm.status) {
+  const handleSaveProcess = async () => {
+    if (!processForm.status || !selectedReturn) {
       toast.error('Please select a status');
       return;
     }
 
-    // Handle stock changes based on status
-    if (selectedReturn) {
+    try {
+      const updates: Partial<ReturnRequest> = {
+        status: processForm.status,
+        resolutionNotes: processForm.resolutionNotes || undefined,
+        trackingNumber: processForm.trackingNumber || undefined
+      };
+
+      // Handle financial fields
+      if (processForm.status === 'refunded' || processForm.status === 'replaced') {
+        updates.refundAmount = processForm.refundAmount;
+        updates.restockingFee = processForm.restockingFee;
+        updates.finalRefundAmount = processForm.refundAmount - processForm.restockingFee;
+      }
+
+      // Handle stock changes based on status
       if (processForm.status === 'received' || processForm.status === 'replaced') {
         // When items are received back or replaced, add stock back
-        selectedReturn.items.forEach(item => {
-          const product = mockData.getProductById(item.productId);
+        for (const item of selectedReturn.items) {
+          const product = await productsService.getProduct(item.productId);
           if (product) {
-            console.log(`Adding stock back for ${product.name}: ${product.currentStock} + ${item.quantity} = ${product.currentStock + item.quantity}`);
-            // product.currentStock += item.quantity; // This would be done in the database
+            const newStock = product.currentStock + item.quantity;
+            await productsService.updateProductStock(item.productId, newStock);
           }
-        });
-        toast.success(`Return ${selectedReturn.returnNumber} processed! Stock has been added back to inventory.`);
-      } else if (processForm.status === 'refunded') {
-        // Refund processed, no stock change
-        toast.success(`Return ${selectedReturn.returnNumber} refunded successfully!`);
-      } else {
-        toast.success(`Return ${selectedReturn.returnNumber} status updated to ${processForm.status}.`);
+        }
       }
+
+      if (processForm.status === 'received') {
+        updates.actualReturnDate = new Date();
+      }
+
+      await returnsService.updateReturn(selectedReturn.id, updates);
+
+      let message = `Return ${selectedReturn.returnNumber} status updated to ${processForm.status}.`;
+      if (processForm.status === 'received' || processForm.status === 'replaced') {
+        message += ' Stock has been added back to inventory.';
+      } else if (processForm.status === 'refunded') {
+        message += ' Refund processed successfully!';
+      }
+
+      toast.success(message);
+      setIsProcessDialogOpen(false);
+      setSelectedReturn(null);
+      setProcessForm({
+        status: '' as ReturnStatus,
+        refundAmount: 0,
+        restockingFee: 0,
+        resolutionNotes: '',
+        trackingNumber: ''
+      });
+    } catch (error) {
+      console.error('Error processing return:', error);
+      toast.error('Failed to process return');
     }
-
-    // In a real app, this would update the return request
-    console.log('Processing return:', selectedReturn?.id, processForm);
-
-    setIsProcessDialogOpen(false);
-    setSelectedReturn(null);
-    setProcessForm({
-      status: '' as ReturnStatus,
-      refundAmount: 0,
-      restockingFee: 0,
-      resolutionNotes: '',
-      trackingNumber: ''
-    });
   };
 
-  const handleConfirmReject = () => {
-    // In a real app, this would reject the return request
-    console.log('Rejecting return:', selectedReturn?.id);
-    toast.success(`Return ${selectedReturn?.returnNumber} rejected successfully!`);
+  const handleConfirmReject = async () => {
+    if (!selectedReturn) return;
 
-    setIsRejectDialogOpen(false);
-    setSelectedReturn(null);
+    try {
+      await returnsService.updateReturn(selectedReturn.id, {
+        status: 'rejected',
+        updatedAt: new Date()
+      });
+
+      toast.success(`Return ${selectedReturn.returnNumber} rejected successfully!`);
+      setIsRejectDialogOpen(false);
+      setSelectedReturn(null);
+    } catch (error) {
+      console.error('Error rejecting return:', error);
+      toast.error('Failed to reject return');
+    }
   };
 
   const getStatusBadge = (status: ReturnStatus) => {
@@ -366,18 +503,6 @@ export default function AdminInventoryReturnsPage() {
     );
   };
 
-  const getReturnStats = () => {
-    const total = mockData.returnRequests.length;
-    const pending = mockData.returnRequests.filter(r => r.status === 'pending').length;
-    const approved = mockData.returnRequests.filter(r => r.status === 'approved').length;
-    const processed = mockData.returnRequests.filter(r => ['refunded', 'replaced'].includes(r.status)).length;
-    const totalValue = mockData.returnRequests.reduce((sum, r) => sum + r.totalValue, 0);
-
-    return { total, pending, approved, processed, totalValue };
-  };
-
-  const stats = getReturnStats();
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -396,7 +521,7 @@ export default function AdminInventoryReturnsPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Real-time Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -565,6 +690,14 @@ export default function AdminInventoryReturnsPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditReturn(returnRequest)}
+                            className="h-8 w-8 p-0 text-blue-600"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
                           {returnRequest.status === 'pending' && (
                             <>
                               <Button
@@ -585,6 +718,14 @@ export default function AdminInventoryReturnsPage() {
                               </Button>
                             </>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteReturn(returnRequest)}
+                            className="h-8 w-8 p-0 text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -793,6 +934,80 @@ export default function AdminInventoryReturnsPage() {
           <DialogFooter className="bg-gray-50 -m-6 mt-4 p-6 rounded-b-lg border-t">
             <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Return Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl bg-white border-2 border-gray-200 shadow-2xl">
+          <DialogHeader className="bg-white border-b border-gray-200 pb-4">
+            <DialogTitle className="text-2xl font-bold text-gray-900">
+              Edit Return - {selectedReturn?.returnNumber}
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 mt-1">
+              Update return details and information
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 bg-white">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editPriority">Priority</Label>
+                <Select
+                  value={editForm.priority}
+                  onValueChange={(value) => setEditForm({ ...editForm, priority: value as 'low' | 'normal' | 'high' | 'urgent' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editReturnMethod">Return Method</Label>
+                <Select
+                  value={editForm.returnMethod}
+                  onValueChange={(value) => setEditForm({ ...editForm, returnMethod: value as 'pickup' | 'drop_off' | 'mail' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select return method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="drop_off">Drop Off</SelectItem>
+                    <SelectItem value="pickup">Pickup</SelectItem>
+                    <SelectItem value="mail">Mail</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="editCustomerNotes">Customer Notes</Label>
+              <Textarea
+                id="editCustomerNotes"
+                value={editForm.customerNotes}
+                onChange={(e) => setEditForm({ ...editForm, customerNotes: e.target.value })}
+                placeholder="Enter any customer notes or reason for return"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="bg-gray-50 -m-6 mt-4 p-6 rounded-b-lg border-t">
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditReturn} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Edit className="h-4 w-4 mr-2" />
+              Update Return
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1083,7 +1298,7 @@ export default function AdminInventoryReturnsPage() {
                               <SelectValue placeholder="Select product" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockData.products.map((product) => (
+                              {products.map((product) => (
                                 <SelectItem key={product.id} value={product.id}>
                                   {product.name} (SKU: {product.sku}) - Stock: {product.currentStock}
                                 </SelectItem>

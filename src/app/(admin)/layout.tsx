@@ -154,15 +154,6 @@ export default function AdminLayout({
                 </svg>
                 Payroll
               </Link>
-              <Link
-                href="/admin/hr/recruitment"
-                className="flex items-center px-4 py-3 text-sm font-medium rounded-lg hover:bg-red-800 transition-all duration-200 group"
-              >
-                <svg className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m8 0V8a2 2 0 01-2 2H8a2 2 0 01-2-2V6m8 0H8m0 0V4" />
-                </svg>
-                Recruitment
-              </Link>
 
               <div className="pt-4 pb-2">
                 <p className="px-4 text-xs font-semibold text-red-300 uppercase tracking-wider">Sales Management</p>

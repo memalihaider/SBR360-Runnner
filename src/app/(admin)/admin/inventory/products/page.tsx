@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,12 +31,13 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  MoreHorizontal
+  MoreHorizontal,
+  Loader2
 } from 'lucide-react';
-import mockData from '@/lib/mock-data';
 import { Product, ProductCategory, ProductStatus, MainCategory, SubCategory } from '@/types';
-
-const products = mockData.products;
+import { toast } from 'sonner';
+import { productService, productStatsService } from '@/lib/productService';
+import { mainCategoryService, subCategoryService } from '@/lib/categoryService';
 
 export default function AdminInventoryProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,7 +51,20 @@ export default function AdminInventoryProductsPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const itemsPerPage = 15;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Data states
+  const [products, setProducts] = useState<Product[]>([]);
+  const [mainCategories, setMainCategories] = useState<MainCategory[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [productStats, setProductStats] = useState({
+    totalProducts: 0,
+    lowStockItems: 0,
+    outOfStock: 0,
+    totalInventoryValue: 0
+  });
 
   // Form state for add/edit product
   const [productForm, setProductForm] = useState<Partial<Product>>({
@@ -72,6 +86,47 @@ export default function AdminInventoryProductsPage() {
     isSerialTracked: false,
     isBatchTracked: false,
   });
+
+  const itemsPerPage = 15;
+
+  // Load data on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [productsData, mainCats, subCats, stats] = await Promise.all([
+        productService.getAllProducts(),
+        mainCategoryService.getAllMainCategories(),
+        subCategoryService.getAllSubCategories(),
+        productStatsService.getProductStats()
+      ]);
+      setProducts(productsData);
+      setMainCategories(mainCats);
+      setSubCategories(subCats);
+      setProductStats(stats);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast.error('Failed to load products');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper functions
+  const getMainCategoryById = (id: string) => {
+    return mainCategories.find(cat => cat.id === id);
+  };
+
+  const getSubCategoryById = (id: string) => {
+    return subCategories.find(sub => sub.id === id);
+  };
+
+  const getSubCategoriesByMainCategory = (mainCategoryId: string) => {
+    return subCategories.filter(sub => sub.mainCategoryId === mainCategoryId);
+  };
 
   // Filter products based on search and filters
   const filteredProducts = useMemo(() => {
@@ -105,7 +160,7 @@ export default function AdminInventoryProductsPage() {
 
       return matchesSearch && matchesMainCategory && matchesSubCategory && matchesStatus && matchesStock;
     });
-  }, [searchTerm, mainCategoryFilter, subCategoryFilter, statusFilter, stockFilter]);
+  }, [searchTerm, mainCategoryFilter, subCategoryFilter, statusFilter, stockFilter, products]);
 
   // Pagination
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
@@ -114,11 +169,11 @@ export default function AdminInventoryProductsPage() {
     currentPage * itemsPerPage
   );
 
-  const productStats = [
-    { title: 'Total Products', value: products.length.toString(), change: '+42', icon: Package, color: 'blue' },
-    { title: 'Low Stock Items', value: products.filter(p => p.currentStock <= p.minStockLevel && p.currentStock > 0).length.toString(), change: '+8', icon: AlertTriangle, color: 'red' },
-    { title: 'Out of Stock', value: products.filter(p => p.currentStock === 0).length.toString(), change: '-5', icon: TrendingDown, color: 'yellow' },
-    { title: 'Total Inventory Value', value: '$' + (products.reduce((sum, p) => sum + (p.costPrice * p.currentStock), 0) / 1000000).toFixed(1) + 'M', change: '+12%', icon: DollarSign, color: 'green' },
+  const stats = [
+    { title: 'Total Products', value: productStats.totalProducts.toString(), change: '+42', icon: Package, color: 'blue' },
+    { title: 'Low Stock Items', value: productStats.lowStockItems.toString(), change: '+8', icon: AlertTriangle, color: 'red' },
+    { title: 'Out of Stock', value: productStats.outOfStock.toString(), change: '-5', icon: TrendingDown, color: 'yellow' },
+    { title: 'Total Inventory Value', value: '$' + (productStats.totalInventoryValue / 1000000).toFixed(1) + 'M', change: '+12%', icon: DollarSign, color: 'green' },
   ];
 
   const getStatusBadge = (status: ProductStatus) => {
@@ -177,19 +232,80 @@ export default function AdminInventoryProductsPage() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleSaveProduct = () => {
-    // In a real app, this would save to the database
-    console.log('Saving product:', productForm);
-    setIsAddDialogOpen(false);
-    setIsEditDialogOpen(false);
-    setProductForm({});
+  const handleSaveProduct = async () => {
+    if (!productForm.name?.trim() || !productForm.sku?.trim() || !productForm.manufacturer?.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (!productForm.mainCategoryId || !productForm.subCategoryId) {
+      toast.error('Please select both main and sub category');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      if (isAddDialogOpen) {
+        const newProduct: Omit<Product, 'id'> = {
+          name: productForm.name!,
+          sku: productForm.sku!,
+          description: productForm.description || '',
+          mainCategoryId: productForm.mainCategoryId!,
+          subCategoryId: productForm.subCategoryId!,
+          category: productForm.category!,
+          manufacturer: productForm.manufacturer!,
+          modelNumber: productForm.modelNumber || '',
+          costPrice: productForm.costPrice || 0,
+          sellingPrice: productForm.sellingPrice || 0,
+          currentStock: productForm.currentStock || 0,
+          minStockLevel: productForm.minStockLevel || 10,
+          maxStockLevel: productForm.maxStockLevel || 1000,
+          reorderPoint: productForm.reorderPoint || 20,
+          status: productForm.status || 'active',
+          isSerialTracked: productForm.isSerialTracked || false,
+          isBatchTracked: productForm.isBatchTracked || false,
+          margin: 0, // Will be calculated in service
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        await productService.createProduct(newProduct);
+        toast.success(`Product "${productForm.name}" added successfully!`);
+      } else if (isEditDialogOpen && selectedProduct) {
+        await productService.updateProduct(selectedProduct.id, productForm);
+        toast.success(`Product "${productForm.name}" updated successfully!`);
+      }
+      
+      await loadData();
+      setIsAddDialogOpen(false);
+      setIsEditDialogOpen(false);
+      setProductForm({});
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast.error('Failed to save product');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleConfirmDelete = () => {
-    // In a real app, this would delete from the database
-    console.log('Deleting product:', selectedProduct?.id);
-    setIsDeleteDialogOpen(false);
-    setSelectedProduct(null);
+  const handleConfirmDelete = async () => {
+    if (!selectedProduct) return;
+
+    try {
+      setDeleting(selectedProduct.id);
+      await productService.deleteProduct(selectedProduct.id);
+      toast.success(`Product "${selectedProduct.name}" deleted successfully!`);
+      await loadData();
+      setIsDeleteDialogOpen(false);
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast.error('Failed to delete product');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const handleExportProducts = () => {
@@ -201,6 +317,17 @@ export default function AdminInventoryProductsPage() {
     // In a real app, this would open a file picker for CSV import
     alert('Importing products from CSV');
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-red-600" />
+          <p className="mt-2 text-gray-600">Loading products...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -230,7 +357,7 @@ export default function AdminInventoryProductsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {productStats.map((stat, index) => {
+        {stats.map((stat, index) => {
           const IconComponent = stat.icon;
           return (
             <Card key={index} className="hover:shadow-xl transition-all duration-300 border-2">
@@ -284,7 +411,7 @@ export default function AdminInventoryProductsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Main Categories</SelectItem>
-                  {mockData.mainCategories.map((category) => (
+                  {mainCategories.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
                       {category.icon} {category.name}
                     </SelectItem>
@@ -301,7 +428,7 @@ export default function AdminInventoryProductsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sub Categories</SelectItem>
-                  {mainCategoryFilter !== 'all' && mockData.getSubCategoriesByMainCategory(mainCategoryFilter).map((subCategory) => (
+                  {mainCategoryFilter !== 'all' && getSubCategoriesByMainCategory(mainCategoryFilter).map((subCategory) => (
                     <SelectItem key={subCategory.id} value={subCategory.id}>
                       {subCategory.icon} {subCategory.name}
                     </SelectItem>
@@ -405,12 +532,12 @@ export default function AdminInventoryProductsPage() {
                       <TableCell className="font-medium text-gray-900">{product.sku}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
-                          {mockData.getMainCategoryById(product.mainCategoryId)?.name || 'Unknown'}
+                          {getMainCategoryById(product.mainCategoryId)?.name || 'Unknown'}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
-                          {mockData.getSubCategoryById(product.subCategoryId)?.name || 'Unknown'}
+                          {getSubCategoryById(product.subCategoryId)?.name || 'Unknown'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -451,8 +578,13 @@ export default function AdminInventoryProductsPage() {
                             variant="ghost"
                             onClick={() => handleDeleteProduct(product)}
                             className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            disabled={deleting === product.id}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {deleting === product.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>
@@ -529,8 +661,8 @@ export default function AdminInventoryProductsPage() {
                   <div className="space-y-1 text-sm">
                     <p><span className="font-medium text-gray-700">Name:</span> <span className="text-gray-900">{selectedProduct.name}</span></p>
                     <p><span className="font-medium text-gray-700">SKU:</span> <span className="text-gray-900">{selectedProduct.sku}</span></p>
-                    <p><span className="font-medium text-gray-700">Main Category:</span> <span className="text-gray-900">{mockData.getMainCategoryById(selectedProduct.mainCategoryId)?.name || 'Unknown'}</span></p>
-                    <p><span className="font-medium text-gray-700">Sub Category:</span> <span className="text-gray-900">{mockData.getSubCategoryById(selectedProduct.subCategoryId)?.name || 'Unknown'}</span></p>
+                    <p><span className="font-medium text-gray-700">Main Category:</span> <span className="text-gray-900">{getMainCategoryById(selectedProduct.mainCategoryId)?.name || 'Unknown'}</span></p>
+                    <p><span className="font-medium text-gray-700">Sub Category:</span> <span className="text-gray-900">{getSubCategoryById(selectedProduct.subCategoryId)?.name || 'Unknown'}</span></p>
                     <p><span className="font-medium text-gray-700">Manufacturer:</span> <span className="text-gray-900">{selectedProduct.manufacturer}</span></p>
                     <p><span className="font-medium text-gray-700">Model:</span> <span className="text-gray-900">{selectedProduct.modelNumber || 'N/A'}</span></p>
                   </div>
@@ -568,21 +700,6 @@ export default function AdminInventoryProductsPage() {
                 <div>
                   <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
                   <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-200">{selectedProduct.description}</p>
-                </div>
-              )}
-
-              {/* Specifications */}
-              {selectedProduct.specifications && Object.keys(selectedProduct.specifications).length > 0 && (
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-4">Specifications</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    {Object.entries(selectedProduct.specifications).map(([key, value]) => (
-                      <div key={key} className="flex justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <span className="font-medium text-gray-700">{key}:</span>
-                        <span className="text-gray-900">{value}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
 
@@ -647,7 +764,7 @@ export default function AdminInventoryProductsPage() {
                 <TabsTrigger value="basic">Basic Info</TabsTrigger>
                 <TabsTrigger value="pricing">Pricing</TabsTrigger>
                 <TabsTrigger value="inventory">Inventory</TabsTrigger>
-                <TabsTrigger value="specifications">Specs</TabsTrigger>
+               
               </TabsList>
 
               <TabsContent value="basic" className="space-y-4">
@@ -689,11 +806,12 @@ export default function AdminInventoryProductsPage() {
                     <Select 
                       value={productForm.mainCategoryId} 
                       onValueChange={(value) => {
+                        const mainCategory = getMainCategoryById(value);
                         setProductForm({ 
                           ...productForm, 
                           mainCategoryId: value,
                           subCategoryId: '', // Reset subcategory when main category changes
-                          category: `${mockData.getMainCategoryById(value)?.name || ''}` as ProductCategory
+                          category: `${mainCategory?.name || ''}` as ProductCategory
                         });
                       }}
                     >
@@ -701,7 +819,7 @@ export default function AdminInventoryProductsPage() {
                         <SelectValue placeholder="Select main category" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mockData.mainCategories.map((category) => (
+                        {mainCategories.map((category) => (
                           <SelectItem key={category.id} value={category.id}>
                             {category.icon} {category.name}
                           </SelectItem>
@@ -714,8 +832,8 @@ export default function AdminInventoryProductsPage() {
                     <Select 
                       value={productForm.subCategoryId} 
                       onValueChange={(value) => {
-                        const subCategory = mockData.getSubCategoryById(value);
-                        const mainCategory = mockData.getMainCategoryById(productForm.mainCategoryId || '');
+                        const subCategory = getSubCategoryById(value);
+                        const mainCategory = getMainCategoryById(productForm.mainCategoryId || '');
                         setProductForm({ 
                           ...productForm, 
                           subCategoryId: value,
@@ -728,7 +846,7 @@ export default function AdminInventoryProductsPage() {
                         <SelectValue placeholder="Select sub category" />
                       </SelectTrigger>
                       <SelectContent>
-                        {productForm.mainCategoryId && mockData.getSubCategoriesByMainCategory(productForm.mainCategoryId).map((subCategory) => (
+                        {productForm.mainCategoryId && getSubCategoriesByMainCategory(productForm.mainCategoryId).map((subCategory) => (
                           <SelectItem key={subCategory.id} value={subCategory.id}>
                             {subCategory.icon} {subCategory.name}
                           </SelectItem>
@@ -872,23 +990,30 @@ export default function AdminInventoryProductsPage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="specifications" className="space-y-4">
-                <div className="text-sm text-gray-600 mb-4">
-                  Add product specifications (optional)
-                </div>
-                {/* Specifications form would go here - simplified for now */}
-                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center text-gray-500">
-                  Specifications form would be implemented here
-                </div>
+               <TabsContent value="specifications" className="space-y-4">
+                
               </TabsContent>
-            </Tabs>
+            </Tabs> 
 
             <DialogFooter className="bg-gray-50 -m-6 mt-4 p-6 rounded-b-lg border-t">
               <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); setIsEditDialogOpen(false); }}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveProduct} className="bg-red-600 hover:bg-red-700 text-white">
-                {isAddDialogOpen ? 'Add Product' : 'Save Changes'}
+              <Button 
+                onClick={handleSaveProduct} 
+                className="bg-red-600 hover:bg-red-700 text-white"
+                disabled={saving}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {isAddDialogOpen ? 'Adding...' : 'Saving...'}
+                  </>
+                ) : (
+                  <>
+                    {isAddDialogOpen ? 'Add Product' : 'Save Changes'}
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </div>
@@ -920,9 +1045,22 @@ export default function AdminInventoryProductsPage() {
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700 text-white">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Product
+            <Button 
+              onClick={handleConfirmDelete} 
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={deleting === selectedProduct?.id}
+            >
+              {deleting === selectedProduct?.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Product
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -930,3 +1068,4 @@ export default function AdminInventoryProductsPage() {
     </div>
   );
 }
+

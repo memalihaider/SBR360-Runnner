@@ -1,84 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Building2, Users, Plus, TrendingUp, Eye, Edit2, User, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface Department {
-  id: number;
-  name: string;
-  head: string;
-  employees: number;
-  budget: string;
-  growth: string;
-  description: string;
-}
+import type { Department } from '@/lib/department';
+import {
+  subscribeDepartments,
+  addDepartment as addDepartmentFn,
+  updateDepartment as updateDepartmentFn,
+  deleteDepartment as deleteDepartmentFn,
+} from '@/lib/department';
 
 export default function DepartmentsPage() {
-  const [departments, setDepartments] = useState<Department[]>([
-    {
-      id: 1,
-      name: 'Engineering',
-      head: 'John Smith',
-      employees: 45,
-      budget: '$2.1M',
-      growth: '+12%',
-      description: 'Software development and technical operations',
-    },
-    {
-      id: 2,
-      name: 'Sales',
-      head: 'Sarah Johnson',
-      employees: 32,
-      budget: '$1.8M',
-      growth: '+8%',
-      description: 'Customer acquisition and relationship management',
-    },
-    {
-      id: 3,
-      name: 'HR',
-      head: 'Lisa Chen',
-      employees: 12,
-      budget: '$650K',
-      growth: '+5%',
-      description: 'Human resources and employee management',
-    },
-    {
-      id: 4,
-      name: 'Finance',
-      head: 'Mike Davis',
-      employees: 18,
-      budget: '$950K',
-      growth: '+3%',
-      description: 'Financial planning and accounting',
-    },
-    {
-      id: 5,
-      name: 'Operations',
-      head: 'David Wilson',
-      employees: 28,
-      budget: '$1.2M',
-      growth: '+15%',
-      description: 'Business operations and logistics',
-    },
-    {
-      id: 6,
-      name: 'Marketing',
-      head: 'Emma Rodriguez',
-      employees: 15,
-      budget: '$780K',
-      growth: '+10%',
-      description: 'Brand management and marketing campaigns',
-    },
-  ]);
+  // departments state driven by Firestore
+  const [departments, setDepartments] = useState<Department[]>([]);
 
   // Modal states
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -103,47 +46,141 @@ export default function DepartmentsPage() {
     description: '',
   });
 
-  // Handlers
-  const handleAddDepartment = () => {
+  // Stats state (computed from departments)
+  const [stats, setStats] = useState([
+    {
+      title: 'Total Departments',
+      value: '0',
+      change: '+0',
+      icon: Building2,
+      color: 'text-red-600',
+      bgColor: 'bg-red-100',
+    },
+    {
+      title: 'Total Employees',
+      value: '0',
+      change: '+0%',
+      icon: Users,
+      color: 'text-red-600',
+      bgColor: 'bg-red-100',
+    },
+    {
+      title: 'Avg Department Size',
+      value: '0',
+      change: '+0%',
+      icon: TrendingUp,
+      color: 'text-red-600',
+      bgColor: 'bg-red-100',
+    },
+  ]);
+
+  // keep previous values to compute "change" for a basic delta comparison
+  const prevTotalsRef = useRef({ totalDepartments: 0, totalEmployees: 0, avgSize: 0 });
+
+  // Subscribe to Firestore departments collection in real time
+  useEffect(() => {
+    const unsub = subscribeDepartments(
+      (deps) => {
+        setDepartments(deps);
+      },
+      (err) => {
+        console.error('Failed to subscribe to departments:', err);
+        toast.error('Failed to load departments');
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Recompute stats whenever departments change
+  useEffect(() => {
+    const totalDepartments = departments.length;
+    const totalEmployees = departments.reduce((s, d) => s + (Number(d.employees) || 0), 0);
+    const avgSize = totalDepartments > 0 ? totalEmployees / totalDepartments : 0;
+
+    // compute simple change vs previous snapshot (absolute & percent)
+    const prev = prevTotalsRef.current;
+
+    const deptChange = totalDepartments - prev.totalDepartments;
+    const empPercentChange = prev.totalEmployees === 0 ? (totalEmployees === 0 ? 0 : 100) : ((totalEmployees - prev.totalEmployees) / Math.abs(prev.totalEmployees)) * 100;
+    const avgPercentChange = prev.avgSize === 0 ? (avgSize === 0 ? 0 : 100) : ((avgSize - prev.avgSize) / Math.abs(prev.avgSize)) * 100;
+
+    const newStats = [
+      {
+        title: 'Total Departments',
+        value: String(totalDepartments),
+        change: (deptChange >= 0 ? `+${deptChange}` : `${deptChange}`),
+        icon: Building2,
+        color: 'text-red-600',
+        bgColor: 'bg-red-100',
+      },
+      {
+        title: 'Total Employees',
+        value: String(totalEmployees),
+        change: (empPercentChange >= 0 ? `+${empPercentChange.toFixed(0)}%` : `${empPercentChange.toFixed(0)}%`),
+        icon: Users,
+        color: 'text-red-600',
+        bgColor: 'bg-red-100',
+      },
+      {
+        title: 'Avg Department Size',
+        value: avgSize % 1 === 0 ? String(avgSize) : String(avgSize.toFixed(1)),
+        change: (avgPercentChange >= 0 ? `+${avgPercentChange.toFixed(0)}%` : `${avgPercentChange.toFixed(0)}%`),
+        icon: TrendingUp,
+        color: 'text-red-600',
+        bgColor: 'bg-red-100',
+      },
+    ];
+
+    // update prev ref
+    prevTotalsRef.current = { totalDepartments, totalEmployees, avgSize };
+    setStats(newStats);
+  }, [departments]);
+
+  // Handlers - Add
+  const handleAddDepartment = async () => {
     if (!newDepartment.name || !newDepartment.head || !newDepartment.description) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    const department: Department = {
-      id: Math.max(...departments.map(d => d.id)) + 1,
-      name: newDepartment.name,
-      head: newDepartment.head,
-      employees: parseInt(newDepartment.employees) || 0,
-      budget: newDepartment.budget || '$0',
-      growth: '+0%',
-      description: newDepartment.description,
-    };
-
-    setDepartments(prev => [...prev, department]);
-    setNewDepartment({ name: '', head: '', employees: '', budget: '', description: '' });
-    setAddDialogOpen(false);
-    toast.success('Department added successfully');
+    try {
+      await addDepartmentFn({
+        name: newDepartment.name,
+        head: newDepartment.head,
+        employees: Number(newDepartment.employees || 0),
+        budget: newDepartment.budget || '$0',
+        description: newDepartment.description,
+      });
+      setNewDepartment({ name: '', head: '', employees: '', budget: '', description: '' });
+      setAddDialogOpen(false);
+      toast.success('Department added successfully');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to add department');
+    }
   };
 
+  // View
   const handleViewDepartment = (department: Department) => {
     setSelectedDepartment(department);
     setViewDialogOpen(true);
   };
 
+  // Edit open
   const handleEditDepartment = (department: Department) => {
     setSelectedDepartment(department);
     setEditDepartment({
       name: department.name,
       head: department.head,
-      employees: department.employees.toString(),
-      budget: department.budget,
-      description: department.description,
+      employees: String(department.employees ?? 0),
+      budget: department.budget ?? '$0',
+      description: department.description ?? '',
     });
     setEditDialogOpen(true);
   };
 
-  const handleUpdateDepartment = () => {
+  // Update
+  const handleUpdateDepartment = async () => {
     if (!selectedDepartment) return;
 
     if (!editDepartment.name || !editDepartment.head || !editDepartment.description) {
@@ -151,50 +188,39 @@ export default function DepartmentsPage() {
       return;
     }
 
-    setDepartments(prev => prev.map(dept =>
-      dept.id === selectedDepartment.id
-        ? {
-            ...dept,
-            name: editDepartment.name,
-            head: editDepartment.head,
-            employees: parseInt(editDepartment.employees) || 0,
-            budget: editDepartment.budget,
-            description: editDepartment.description,
-          }
-        : dept
-    ));
-
-    setEditDialogOpen(false);
-    setSelectedDepartment(null);
-    toast.success('Department updated successfully');
+    try {
+      // selectedDepartment.id comes from Firestore doc id (string)
+      await updateDepartmentFn(String(selectedDepartment.id), {
+        name: editDepartment.name,
+        head: editDepartment.head,
+        employees: Number(editDepartment.employees || 0),
+        budget: editDepartment.budget || '$0',
+        description: editDepartment.description,
+      });
+      setEditDialogOpen(false);
+      setSelectedDepartment(null);
+      toast.success('Department updated successfully');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update department');
+    }
   };
 
-  const stats = [
-    {
-      title: 'Total Departments',
-      value: '6',
-      change: '+1',
-      icon: Building2,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
-    },
-    {
-      title: 'Total Employees',
-      value: '189',
-      change: '+5%',
-      icon: Users,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
-    },
-    {
-      title: 'Avg Department Size',
-      value: '31.5',
-      change: '+2%',
-      icon: TrendingUp,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
-    },
-  ];
+  // Delete (called from edit dialog or wherever you wire it in)
+  const handleDeleteDepartment = async (id?: string | number) => {
+    if (!id) return;
+    if (!confirm('Are you sure you want to delete this department? This action cannot be undone.')) return;
+
+    try {
+      await deleteDepartmentFn(String(id));
+      toast.success('Department deleted');
+      setEditDialogOpen(false);
+      setSelectedDepartment(null);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to delete department');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -231,7 +257,7 @@ export default function DepartmentsPage() {
                   >
                     {stat.change}
                   </span>{' '}
-                  <span className="text-gray-500">from last month</span>
+                  <span className="text-gray-500">from last snapshot</span>
                 </p>
               </CardContent>
             </Card>
@@ -258,7 +284,7 @@ export default function DepartmentsPage() {
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {departments.map((dept) => (
-              <Card key={dept.id} className="hover:shadow-xl transition-all duration-300 border-2 hover:border-red-200">
+              <Card key={String(dept.id)} className="hover:shadow-xl transition-all duration-300 border-2 hover:border-red-200">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg text-gray-900">{dept.name}</CardTitle>
@@ -490,13 +516,22 @@ export default function DepartmentsPage() {
               />
             </div>
           </div>
-          <div className="flex justify-end space-x-2 mt-4">
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)} className="bg-white border-gray-300">
-              Cancel
-            </Button>
-            <Button onClick={handleUpdateDepartment} className="bg-red-600 hover:bg-red-700">
-              Update Department
-            </Button>
+          <div className="flex justify-between mt-4">
+            <div className="flex items-center space-x-2">
+              {/* Delete button — intentionally subtle to avoid accidental deletes */}
+              <Button variant="outline" onClick={() => handleDeleteDepartment(selectedDepartment?.id)} className="bg-white border-gray-300 text-red-600">
+                Delete
+              </Button>
+            </div>
+
+            <div className="flex space-x-2">
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)} className="bg-white border-gray-300">
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateDepartment} className="bg-red-600 hover:bg-red-700">
+                Update Department
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

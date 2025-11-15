@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
 import {
   Plus,
   Edit,
@@ -24,12 +22,9 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  AlertTriangle,
   DollarSign,
-  Calendar,
-  User,
   Building,
-  Settings,
+  User,
   Save,
   Send,
   Copy,
@@ -39,181 +34,23 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import mockData from '@/lib/mock-data';
+
+// Firebase imports
+import { db } from '@/lib/firebase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot,
+  serverTimestamp 
+} from 'firebase/firestore';
+
 import { BOQ, BOQItem, BOQSection, BOQStatus, BOQItemType, BOQMainCategory, BOQSubCategory } from '@/types';
 import { toast } from 'sonner';
 import { faker } from '@faker-js/faker';
-
-// Mock BOQ data
-const boqs: BOQ[] = [
-  {
-    id: 'BOQ-001',
-    boqNumber: 'BOQ-2024-001',
-    projectId: 'PROJ-001',
-    projectName: 'Office Building Installation',
-    customerId: 'CUST-001',
-    customerName: 'TechCorp Solutions',
-    status: 'approved',
-    version: 2,
-    title: 'Bill of Quantities - Office Building Electrical Installation',
-    description: 'Complete electrical installation for 5-floor office building',
-    sections: [
-      {
-        id: 'SEC-001',
-        sectionNumber: '1.0',
-        title: 'Electrical Wiring & Cabling',
-        description: 'All electrical wiring and cabling work',
-        items: [
-          {
-            id: 'ITEM-001',
-            itemNumber: '1.1',
-            description: '2.5mm² Copper Conductor Cable',
-            type: 'material',
-            mainCategory: 'electrical',
-            subCategory: 'cabling',
-            category: 'Electrical/Cabling',
-            unit: 'meter',
-            quantity: 2500,
-            unitRate: 8.50,
-            totalAmount: 21250,
-            brand: 'Havells',
-            model: 'FR PVC Copper Cable',
-            qualityGrade: 'standard',
-            warranty: '12 months',
-            deliveryTime: 7,
-            specifications: '600V rated, stranded copper, flame retardant PVC insulation',
-          },
-          {
-            id: 'ITEM-002',
-            itemNumber: '1.2',
-            description: 'Electrical Conduit 25mm PVC',
-            type: 'material',
-            mainCategory: 'electrical',
-            subCategory: 'cabling',
-            category: 'Electrical/Cabling',
-            unit: 'meter',
-            quantity: 800,
-            unitRate: 12.00,
-            totalAmount: 9600,
-            brand: 'Finolex',
-            model: 'PVC Conduit Pipe',
-            qualityGrade: 'standard',
-            warranty: '24 months',
-            deliveryTime: 5,
-            specifications: 'Heavy duty PVC conduit, ISI marked',
-          },
-        ],
-        subtotal: 30850,
-      },
-      {
-        id: 'SEC-002',
-        sectionNumber: '2.0',
-        title: 'Lighting & Fixtures',
-        description: 'All lighting fixtures and installation',
-        items: [
-          {
-            id: 'ITEM-003',
-            itemNumber: '2.1',
-            description: 'LED Panel Light 600x600mm',
-            type: 'material',
-            mainCategory: 'electrical',
-            subCategory: 'lighting',
-            category: 'Electrical/Lighting',
-            unit: 'each',
-            quantity: 120,
-            unitRate: 85.00,
-            totalAmount: 10200,
-            brand: 'Philips',
-            model: 'LED Panel 600x600',
-            qualityGrade: 'premium',
-            warranty: '36 months',
-            deliveryTime: 10,
-            specifications: '36W LED panel with emergency backup, 4000K color temperature, CRI >80',
-          },
-        ],
-        subtotal: 10200,
-      },
-    ],
-    subtotal: 41050,
-    discountAmount: 2052.50,
-    discountPercentage: 5,
-    taxAmount: 7799.50,
-    taxPercentage: 21,
-    totalAmount: 46797,
-    validityPeriod: 30,
-    paymentTerms: '50% advance, 40% on completion, 10% after warranty',
-    deliveryTerms: 'Delivery within 45 days from PO date',
-    warrantyTerms: '2 years comprehensive warranty',
-    createdDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
-    lastModified: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-    approvedDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-    expiryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-    createdBy: 'John Doe',
-    approvedBy: 'Jane Smith',
-    reviewedBy: ['Mike Johnson'],
-    internalNotes: 'Client requested LED lighting upgrade',
-    createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: 'BOQ-002',
-    boqNumber: 'BOQ-2024-002',
-    projectId: 'PROJ-002',
-    projectName: 'Warehouse Automation',
-    customerId: 'CUST-002',
-    customerName: 'Logistics Plus',
-    status: 'draft',
-    version: 1,
-    title: 'Bill of Quantities - Warehouse Automation System',
-    description: 'Automated conveyor and sorting system installation',
-    sections: [
-      {
-        id: 'SEC-003',
-        sectionNumber: '1.0',
-        title: 'Conveyor System',
-        description: 'Automated conveyor belts and components',
-        items: [
-          {
-            id: 'ITEM-004',
-            itemNumber: '1.1',
-            description: 'Modular Conveyor Belt System',
-            type: 'equipment',
-            mainCategory: 'mechanical',
-            subCategory: 'conveyors',
-            category: 'Mechanical/Conveyors',
-            unit: 'meter',
-            quantity: 500,
-            unitRate: 450.00,
-            totalAmount: 225000,
-            brand: 'Siemens',
-            model: 'Modular Conveyor Pro',
-            qualityGrade: 'premium',
-            warranty: '24 months',
-            deliveryTime: 30,
-            specifications: 'Heavy duty modular conveyor, 100kg/m capacity, variable speed control',
-          },
-        ],
-        subtotal: 225000,
-      },
-    ],
-    subtotal: 225000,
-    discountAmount: 0,
-    discountPercentage: 0,
-    taxAmount: 47250,
-    taxPercentage: 21,
-    totalAmount: 272250,
-    validityPeriod: 45,
-    paymentTerms: '30% advance, 30% on delivery, 40% on installation',
-    deliveryTerms: 'Delivery within 60 days from PO date',
-    createdDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    lastModified: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-    expiryDate: new Date(Date.now() + 42 * 24 * 60 * 60 * 1000),
-    createdBy: 'Alice Wilson',
-    internalNotes: 'High priority project - expedite approval',
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-  },
-];
 
 export default function AdminBOQPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -225,6 +62,13 @@ export default function AdminBOQPage() {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  
+  // Real-time data states
+  const [boqs, setBoqs] = useState<BOQ[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const itemsPerPage = 10;
 
   // Create/Edit BOQ form state
@@ -241,9 +85,76 @@ export default function AdminBOQPage() {
     sections: [] as BOQSection[],
   });
 
-  // Edit item form state
-  const [editingItem, setEditingItem] = useState<BOQItem | null>(null);
-  const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
+  // Firebase data fetch
+  useEffect(() => {
+    const unsubscribe = fetchRealTimeData();
+    return () => unsubscribe();
+  }, []);
+
+  const fetchRealTimeData = () => {
+    setLoading(true);
+
+    // Real-time BOQs
+    const boqUnsubscribe = onSnapshot(
+      collection(db, 'boqs'), 
+      (snapshot) => {
+        const boqData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdDate: doc.data().createdDate?.toDate() || new Date(),
+          lastModified: doc.data().lastModified?.toDate() || new Date(),
+          expiryDate: doc.data().expiryDate?.toDate() || new Date(),
+          approvedDate: doc.data().approvedDate?.toDate(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+          updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+        })) as BOQ[];
+        setBoqs(boqData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching BOQs:', error);
+        toast.error('Failed to load BOQs');
+        setLoading(false);
+      }
+    );
+
+    // Fetch Projects - Firebase se projects collection se name field fetch karna
+    const fetchProjects = async () => {
+      try {
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const projectsData = projectsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name, // Sirf name field fetch karna
+          ...doc.data()
+        }));
+        setProjects(projectsData);
+      } catch (error) {
+        console.error('Error fetching projects:', error);
+        toast.error('Failed to load projects');
+      }
+    };
+
+    // Fetch Customers - Firebase se customers collection se companyName field fetch karna
+    const fetchCustomers = async () => {
+      try {
+        const customersSnapshot = await getDocs(collection(db, 'customers'));
+        const customersData = customersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          companyName: doc.data().companyName, // companyName field fetch karna
+          ...doc.data()
+        }));
+        setCustomers(customersData);
+      } catch (error) {
+        console.error('Error fetching customers:', error);
+        toast.error('Failed to load customers');
+      }
+    };
+
+    fetchProjects();
+    fetchCustomers();
+
+    return boqUnsubscribe;
+  };
 
   // Filter BOQs based on search and filters
   const filteredBOQs = useMemo(() => {
@@ -257,7 +168,7 @@ export default function AdminBOQPage() {
 
       return matchesSearch && matchesStatus && matchesProject;
     });
-  }, [searchTerm, statusFilter, projectFilter]);
+  }, [searchTerm, statusFilter, projectFilter, boqs]);
 
   // Pagination
   const totalPages = Math.ceil(filteredBOQs.length / itemsPerPage);
@@ -266,12 +177,65 @@ export default function AdminBOQPage() {
     currentPage * itemsPerPage
   );
 
+  // Real-time Stats Calculation
   const boqStats = [
-    { title: 'Total BOQs', value: boqs.length.toString(), change: '+3', icon: FileText, color: 'blue' },
-    { title: 'Approved BOQs', value: boqs.filter(b => b.status === 'approved').length.toString(), change: '+2', icon: CheckCircle, color: 'green' },
-    { title: 'Draft BOQs', value: boqs.filter(b => b.status === 'draft').length.toString(), change: '+1', icon: Clock, color: 'yellow' },
-    { title: 'Total Value', value: '$' + (boqs.reduce((sum, b) => sum + b.totalAmount, 0) / 1000).toFixed(0) + 'K', change: '+15%', icon: DollarSign, color: 'purple' },
+    { 
+      title: 'Total BOQs', 
+      value: boqs.length.toString(), 
+      change: '+3', 
+      icon: FileText, 
+      color: 'blue' 
+    },
+    { 
+      title: 'Approved BOQs', 
+      value: boqs.filter(b => b.status === 'approved').length.toString(), 
+      change: '+2', 
+      icon: CheckCircle, 
+      color: 'green' 
+    },
+    { 
+      title: 'Draft BOQs', 
+      value: boqs.filter(b => b.status === 'draft').length.toString(), 
+      change: '+1', 
+      icon: Clock, 
+      color: 'yellow' 
+    },
+    { 
+      title: 'Total Value', 
+      value: '$' + (boqs.reduce((sum, b) => sum + (b.totalAmount || 0), 0) / 1000).toFixed(0) + 'K', 
+      change: '+15%', 
+      icon: DollarSign, 
+      color: 'purple' 
+    },
   ];
+
+  // Get project name by ID
+  const getProjectName = (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    return project ? project.name : 'Unknown Project';
+  };
+
+  // Get customer name by ID - Ab companyName use kar rahe hain
+  const getCustomerName = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    return customer ? customer.companyName : 'Unknown Customer'; // Ab companyName field use ho raha hai
+  };
+
+  // Calculate BOQ totals function
+  const calculateBOQTotals = (sections: BOQSection[], discountPercentage: number, taxPercentage: number) => {
+    const subtotal = sections.reduce((sum, section) => sum + (section.subtotal || 0), 0);
+    const discountAmount = subtotal * (discountPercentage / 100);
+    const discountedSubtotal = subtotal - discountAmount;
+    const taxAmount = discountedSubtotal * (taxPercentage / 100);
+    const totalAmount = discountedSubtotal + taxAmount;
+
+    return {
+      subtotal,
+      discountAmount,
+      taxAmount,
+      totalAmount,
+    };
+  };
 
   const toggleBOQExpansion = (boqId: string) => {
     const newExpanded = new Set(expandedBOQs);
@@ -301,21 +265,6 @@ export default function AdminBOQPage() {
         {config.label}
       </Badge>
     );
-  };
-
-  const calculateBOQTotals = (sections: BOQSection[], discountPercentage: number, taxPercentage: number) => {
-    const subtotal = sections.reduce((sum, section) => sum + section.subtotal, 0);
-    const discountAmount = subtotal * (discountPercentage / 100);
-    const discountedSubtotal = subtotal - discountAmount;
-    const taxAmount = discountedSubtotal * (taxPercentage / 100);
-    const totalAmount = discountedSubtotal + taxAmount;
-
-    return {
-      subtotal,
-      discountAmount,
-      taxAmount,
-      totalAmount,
-    };
   };
 
   const handleViewDetails = (boq: BOQ) => {
@@ -354,6 +303,179 @@ export default function AdminBOQPage() {
     });
     setSelectedBOQ(boq);
     setIsEditDialogOpen(true);
+  };
+
+  // Handle Create BOQ with Firebase
+  const handleSaveBOQ = async () => {
+    if (!boqForm.projectId || !boqForm.customerId || !boqForm.title) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (boqForm.sections.length === 0) {
+      toast.error('Please add at least one section with items');
+      return;
+    }
+
+    try {
+      const totals = calculateBOQTotals(boqForm.sections, boqForm.discountPercentage, boqForm.taxPercentage);
+      
+      const project = projects.find(p => p.id === boqForm.projectId);
+      const customer = customers.find(c => c.id === boqForm.customerId);
+
+      const newBOQData = {
+        boqNumber: `BOQ-${new Date().getFullYear()}-${faker.string.numeric(3).padStart(3, '0')}`,
+        projectId: boqForm.projectId,
+        projectName: project?.name || 'Unknown Project',
+        customerId: boqForm.customerId,
+        customerName: customer?.companyName || 'Unknown Customer', // Ab companyName field use ho raha hai
+        status: 'draft',
+        version: 1,
+        title: boqForm.title,
+        description: boqForm.description,
+        sections: boqForm.sections,
+        ...totals,
+        discountPercentage: boqForm.discountPercentage,
+        taxPercentage: boqForm.taxPercentage,
+        validityPeriod: boqForm.validityPeriod,
+        paymentTerms: boqForm.paymentTerms,
+        deliveryTerms: boqForm.deliveryTerms,
+        createdDate: serverTimestamp(),
+        lastModified: serverTimestamp(),
+        expiryDate: new Date(Date.now() + boqForm.validityPeriod * 24 * 60 * 60 * 1000),
+        createdBy: 'Current User',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, 'boqs'), newBOQData);
+      
+      toast.success(`BOQ ${newBOQData.boqNumber} created successfully`);
+      setIsCreateDialogOpen(false);
+      
+      setBoqForm({
+        projectId: '',
+        customerId: '',
+        title: '',
+        description: '',
+        validityPeriod: 30,
+        paymentTerms: '50% advance, 50% on completion',
+        deliveryTerms: 'Delivery within 30 days from PO date',
+        discountPercentage: 0,
+        taxPercentage: 21,
+        sections: [],
+      });
+      
+    } catch (error) {
+      console.error('Error creating BOQ:', error);
+      toast.error('Failed to create BOQ');
+    }
+  };
+
+  // Handle Update BOQ with Firebase
+  const handleUpdateBOQ = async () => {
+    if (!selectedBOQ) return;
+
+    try {
+      const totals = calculateBOQTotals(boqForm.sections, boqForm.discountPercentage, boqForm.taxPercentage);
+
+      const updatedBOQData = {
+        title: boqForm.title,
+        description: boqForm.description,
+        sections: boqForm.sections,
+        ...totals,
+        discountPercentage: boqForm.discountPercentage,
+        taxPercentage: boqForm.taxPercentage,
+        validityPeriod: boqForm.validityPeriod,
+        paymentTerms: boqForm.paymentTerms,
+        deliveryTerms: boqForm.deliveryTerms,
+        lastModified: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, 'boqs', selectedBOQ.id), updatedBOQData);
+      
+      toast.success(`BOQ ${selectedBOQ.boqNumber} updated successfully`);
+      setIsEditDialogOpen(false);
+      setSelectedBOQ(null);
+      
+    } catch (error) {
+      console.error('Error updating BOQ:', error);
+      toast.error('Failed to update BOQ');
+    }
+  };
+
+  // Handle Approve BOQ
+  const handleApproveBOQ = async (boq: BOQ) => {
+    try {
+      await updateDoc(doc(db, 'boqs', boq.id), {
+        status: 'approved',
+        approvedDate: serverTimestamp(),
+        approvedBy: 'Current User',
+        lastModified: serverTimestamp(),
+      });
+      toast.success(`BOQ ${boq.boqNumber} approved successfully`);
+    } catch (error) {
+      console.error('Error approving BOQ:', error);
+      toast.error('Failed to approve BOQ');
+    }
+  };
+
+  // Handle Send to Client
+  const handleSendToClient = async (boq: BOQ) => {
+    try {
+      await updateDoc(doc(db, 'boqs', boq.id), {
+        status: 'sent_to_client',
+        lastModified: serverTimestamp(),
+      });
+      toast.success(`BOQ ${boq.boqNumber} sent to client successfully`);
+    } catch (error) {
+      console.error('Error sending BOQ to client:', error);
+      toast.error('Failed to send BOQ to client');
+    }
+  };
+
+  // Handle Delete BOQ
+  const handleDeleteBOQ = async (boq: BOQ) => {
+    if (!confirm(`Are you sure you want to delete ${boq.boqNumber}?`)) return;
+    
+    try {
+      await deleteDoc(doc(db, 'boqs', boq.id));
+      toast.success(`BOQ ${boq.boqNumber} deleted successfully`);
+    } catch (error) {
+      console.error('Error deleting BOQ:', error);
+      toast.error('Failed to delete BOQ');
+    }
+  };
+
+  // Handle Duplicate BOQ
+  const handleDuplicateBOQ = async (boq: BOQ) => {
+    try {
+      const duplicatedBOQ = {
+        ...boq,
+        boqNumber: `BOQ-${new Date().getFullYear()}-${faker.string.numeric(3).padStart(3, '0')}`,
+        status: 'draft',
+        version: 1,
+        createdDate: serverTimestamp(),
+        lastModified: serverTimestamp(),
+        expiryDate: new Date(Date.now() + boq.validityPeriod * 24 * 60 * 60 * 1000),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      
+      delete duplicatedBOQ.id;
+      await addDoc(collection(db, 'boqs'), duplicatedBOQ);
+      toast.success('BOQ duplicated successfully');
+    } catch (error) {
+      console.error('Error duplicating BOQ:', error);
+      toast.error('Failed to duplicate BOQ');
+    }
+  };
+
+  // Handle Export BOQ
+  const handleExportBOQ = (boq: BOQ) => {
+    console.log('Exporting BOQ:', boq.boqNumber);
+    toast.success('BOQ exported successfully');
   };
 
   const handleAddSection = () => {
@@ -420,7 +542,6 @@ export default function AdminBOQPage() {
     }
 
     if (field === 'mainCategory') {
-      // Reset subCategory when mainCategory changes
       item.mainCategory = value;
       item.subCategory = getDefaultSubCategory(value) as BOQSubCategory;
       item.category = `${getMainCategoryLabel(value)}/${getSubCategoryLabel(item.subCategory)}`;
@@ -431,7 +552,6 @@ export default function AdminBOQPage() {
       (item as any)[field] = value;
     }
 
-    // Recalculate section subtotal
     updatedSections[sectionIndex].subtotal = updatedSections[sectionIndex].items.reduce(
       (sum, item) => sum + item.totalAmount, 0
     );
@@ -457,14 +577,12 @@ export default function AdminBOQPage() {
 
   const getSubCategoryLabel = (subCategory: string) => {
     const labels: Record<string, string> = {
-      // Civil Works
       excavation: 'Excavation',
       foundation: 'Foundation',
       concrete: 'Concrete',
       masonry: 'Masonry',
       structural_steel: 'Structural Steel',
       roofing: 'Roofing',
-      // Electrical
       wiring: 'Wiring',
       lighting: 'Lighting',
       switchgear: 'Switchgear',
@@ -472,46 +590,38 @@ export default function AdminBOQPage() {
       generators: 'Generators',
       cabling: 'Cabling',
       earthing: 'Earthing',
-      // Mechanical
       pumps: 'Pumps',
       compressors: 'Compressors',
       conveyors: 'Conveyors',
       elevators: 'Elevators',
       cranes: 'Cranes',
       machinery: 'Machinery',
-      // Plumbing
       water_supply: 'Water Supply',
       drainage: 'Drainage',
       sewage: 'Sewage',
       fire_hydrants: 'Fire Hydrants',
       water_tanks: 'Water Tanks',
-      // HVAC
       air_conditioning: 'Air Conditioning',
       ventilation: 'Ventilation',
       ducting: 'Ducting',
       chillers: 'Chillers',
       boilers: 'Boilers',
-      // Fire Safety
       sprinklers: 'Sprinklers',
       fire_extinguishers: 'Fire Extinguishers',
       alarms: 'Alarms',
       hydrants: 'Hydrants',
-      // Security
       cctv: 'CCTV',
       access_control: 'Access Control',
       intrusion_detection: 'Intrusion Detection',
       fencing: 'Fencing',
-      // Finishing
       painting: 'Painting',
       flooring: 'Flooring',
       ceiling: 'Ceiling',
       doors_windows: 'Doors & Windows',
       furniture: 'Furniture',
-      // Landscaping
       hardscaping: 'Hardscaping',
       softscaping: 'Softscaping',
       irrigation: 'Irrigation',
-      // Other
       custom: 'Custom',
     };
     return labels[subCategory] || subCategory;
@@ -605,124 +715,26 @@ export default function AdminBOQPage() {
     return subCategories[mainCategory] || [{ value: 'custom', label: 'Custom' }];
   };
 
-  const handleSaveBOQ = () => {
-    if (!boqForm.projectId || !boqForm.customerId || !boqForm.title) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    if (boqForm.sections.length === 0) {
-      toast.error('Please add at least one section with items');
-      return;
-    }
-
-    const totals = calculateBOQTotals(boqForm.sections, boqForm.discountPercentage, boqForm.taxPercentage);
-
-    const newBOQ: BOQ = {
-      id: faker.string.uuid(),
-      boqNumber: `BOQ-2024-${faker.string.numeric(3).padStart(3, '0')}`,
-      projectId: boqForm.projectId,
-      projectName: 'Project Name', // Would be looked up from project data
-      customerId: boqForm.customerId,
-      customerName: 'Customer Name', // Would be looked up from customer data
-      status: 'draft',
-      version: 1,
-      title: boqForm.title,
-      description: boqForm.description,
-      sections: boqForm.sections,
-      ...totals,
-      discountPercentage: boqForm.discountPercentage,
-      taxPercentage: boqForm.taxPercentage,
-      validityPeriod: boqForm.validityPeriod,
-      paymentTerms: boqForm.paymentTerms,
-      deliveryTerms: boqForm.deliveryTerms,
-      createdDate: new Date(),
-      lastModified: new Date(),
-      expiryDate: new Date(Date.now() + boqForm.validityPeriod * 24 * 60 * 60 * 1000),
-      createdBy: 'Current User',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    console.log('Creating BOQ:', newBOQ);
-    toast.success(`BOQ ${newBOQ.boqNumber} created successfully`);
-
-    setIsCreateDialogOpen(false);
-    setBoqForm({
-      projectId: '',
-      customerId: '',
-      title: '',
-      description: '',
-      validityPeriod: 30,
-      paymentTerms: '50% advance, 50% on completion',
-      deliveryTerms: 'Delivery within 30 days from PO date',
-      discountPercentage: 0,
-      taxPercentage: 21,
-      sections: [],
-    });
-  };
-
-  const handleUpdateBOQ = () => {
-    if (!selectedBOQ) return;
-
-    const totals = calculateBOQTotals(boqForm.sections, boqForm.discountPercentage, boqForm.taxPercentage);
-
-    const updatedBOQ: BOQ = {
-      ...selectedBOQ,
-      title: boqForm.title,
-      description: boqForm.description,
-      sections: boqForm.sections,
-      ...totals,
-      discountPercentage: boqForm.discountPercentage,
-      taxPercentage: boqForm.taxPercentage,
-      validityPeriod: boqForm.validityPeriod,
-      paymentTerms: boqForm.paymentTerms,
-      deliveryTerms: boqForm.deliveryTerms,
-      lastModified: new Date(),
-      updatedAt: new Date(),
-    };
-
-    console.log('Updating BOQ:', updatedBOQ);
-    toast.success(`BOQ ${updatedBOQ.boqNumber} updated successfully`);
-
-    setIsEditDialogOpen(false);
-    setSelectedBOQ(null);
-  };
-
-  const handleApproveBOQ = (boq: BOQ) => {
-    console.log('Approving BOQ:', boq.id);
-    toast.success(`BOQ ${boq.boqNumber} approved successfully`);
-  };
-
-  const handleSendToClient = (boq: BOQ) => {
-    console.log('Sending BOQ to client:', boq.id);
-    toast.success(`BOQ ${boq.boqNumber} sent to client successfully`);
-  };
-
-  const handleExportBOQ = (boq: BOQ) => {
-    console.log('Exporting BOQ:', boq.boqNumber);
-    toast.success('BOQ exported successfully');
-  };
-
-  const handleDuplicateBOQ = (boq: BOQ) => {
-    console.log('Duplicating BOQ:', boq.id);
-    toast.success('BOQ duplicated successfully');
-  };
-
   return (
     <div className="space-y-6">
+      {/* Loading State */}
+      {loading && (
+        <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading BOQs...</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-linear-to-r from-blue-600 to-blue-700 rounded-xl p-6 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white">Bill of Quantities (BOQ)</h1>
-            <p className="text-blue-100 mt-1 text-lg">Generate and manage detailed project quotations</p>
+            <p className="text-blue-100 mt-1 text-lg">Real-time BOQ management with Firebase</p>
           </div>
           <div className="flex items-center space-x-3">
-            <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => {}}>
-              <Download className="h-4 w-4 mr-2" />
-              Export All
-            </Button>
             <Button className="bg-white text-blue-600 hover:bg-blue-50" onClick={handleCreateBOQ}>
               <Plus className="h-5 w-5 mr-2" />
               Create BOQ
@@ -731,7 +743,7 @@ export default function AdminBOQPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Real-time Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {boqStats.map((stat, index) => {
           const IconComponent = stat.icon;
@@ -746,8 +758,10 @@ export default function AdminBOQPage() {
               <CardContent>
                 <div className="text-3xl font-bold text-gray-900">{stat.value}</div>
                 <p className="text-sm mt-1">
-                  <span className={stat.change.startsWith('+') ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>{stat.change}</span>
-                  <span className="text-gray-500"> from last month</span>
+                  <span className={stat.change.startsWith('+') ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                    {stat.change}
+                  </span>
+                  <span className="text-gray-500"> real-time</span>
                 </p>
               </CardContent>
             </Card>
@@ -803,8 +817,11 @@ export default function AdminBOQPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Projects</SelectItem>
-                  <SelectItem value="PROJ-001">Office Building Installation</SelectItem>
-                  <SelectItem value="PROJ-002">Warehouse Automation</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -878,16 +895,20 @@ export default function AdminBOQPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <div className="font-medium text-gray-900">{boq.projectName}</div>
-                            <div className="text-sm text-gray-500">{boq.customerName}</div>
+                          <div className="font-medium text-gray-900">
+                            {boq.projectName}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-gray-900">
+                            {boq.customerName}
                           </div>
                         </TableCell>
                         <TableCell>
                           {getStatusBadge(boq.status)}
                         </TableCell>
                         <TableCell className="text-right text-gray-900 font-medium">
-                          ${boq.totalAmount.toLocaleString()}
+                          ${boq.totalAmount?.toLocaleString()}
                         </TableCell>
                         <TableCell>
                           <div className="text-sm text-gray-900">{boq.expiryDate.toLocaleDateString()}</div>
@@ -949,6 +970,14 @@ export default function AdminBOQPage() {
                             >
                               <Copy className="h-4 w-4" />
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteBOQ(boq)}
+                              className="h-8 w-8 p-0 text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -967,7 +996,7 @@ export default function AdminBOQPage() {
                                           <p className="text-xs text-gray-600">{section.items.length} items</p>
                                         </div>
                                         <div className="text-right">
-                                          <p className="font-medium text-sm">${section.subtotal.toLocaleString()}</p>
+                                          <p className="font-medium text-sm">${section.subtotal?.toLocaleString()}</p>
                                         </div>
                                       </div>
                                     ))}
@@ -978,19 +1007,19 @@ export default function AdminBOQPage() {
                                   <div className="space-y-2 text-sm bg-white p-3 rounded border">
                                     <div className="flex justify-between">
                                       <span>Subtotal:</span>
-                                      <span className="font-medium">${boq.subtotal.toLocaleString()}</span>
+                                      <span className="font-medium">${boq.subtotal?.toLocaleString()}</span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span>Discount ({boq.discountPercentage}%):</span>
-                                      <span className="font-medium text-green-600">-${boq.discountAmount.toLocaleString()}</span>
+                                      <span className="font-medium text-green-600">-${boq.discountAmount?.toLocaleString()}</span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span>Tax ({boq.taxPercentage}%):</span>
-                                      <span className="font-medium">${boq.taxAmount.toLocaleString()}</span>
+                                      <span className="font-medium">${boq.taxAmount?.toLocaleString()}</span>
                                     </div>
                                     <div className="flex justify-between border-t pt-2 font-bold">
                                       <span>Total:</span>
-                                      <span className="text-green-600">${boq.totalAmount.toLocaleString()}</span>
+                                      <span className="text-green-600">${boq.totalAmount?.toLocaleString()}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -1164,7 +1193,7 @@ export default function AdminBOQPage() {
                             ))}
                             <TableRow className="bg-gray-50 font-semibold">
                               <TableCell colSpan={6} className="text-right">Section Subtotal:</TableCell>
-                              <TableCell className="text-right">${section.subtotal.toLocaleString()}</TableCell>
+                              <TableCell className="text-right">${section.subtotal?.toLocaleString()}</TableCell>
                             </TableRow>
                           </TableBody>
                         </Table>
@@ -1184,19 +1213,19 @@ export default function AdminBOQPage() {
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="font-medium">Subtotal:</span>
-                        <span className="font-bold">${selectedBOQ.subtotal.toLocaleString()}</span>
+                        <span className="font-bold">${selectedBOQ.subtotal?.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium">Discount ({selectedBOQ.discountPercentage}%):</span>
-                        <span className="font-bold text-green-600">-${selectedBOQ.discountAmount.toLocaleString()}</span>
+                        <span className="font-bold text-green-600">-${selectedBOQ.discountAmount?.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium">Tax ({selectedBOQ.taxPercentage}%):</span>
-                        <span className="font-bold">${selectedBOQ.taxAmount.toLocaleString()}</span>
+                        <span className="font-bold">${selectedBOQ.taxAmount?.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between border-t-2 pt-3 text-lg">
                         <span className="font-bold">Total Amount:</span>
-                        <span className="font-bold text-blue-600">${selectedBOQ.totalAmount.toLocaleString()}</span>
+                        <span className="font-bold text-blue-600">${selectedBOQ.totalAmount?.toLocaleString()}</span>
                       </div>
                     </div>
 
@@ -1283,9 +1312,9 @@ export default function AdminBOQPage() {
                     <SelectValue placeholder="Select project" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockData.projects.map((project) => (
+                    {projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
-                        {project.name} - {project.customerId}
+                        {project.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1302,9 +1331,9 @@ export default function AdminBOQPage() {
                     <SelectValue placeholder="Select customer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockData.customers.map((customer) => (
+                    {customers.map((customer) => (
                       <SelectItem key={customer.id} value={customer.id}>
-                        {customer.companyName}
+                        {customer.companyName} {/* Ab companyName show ho raha hai */}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1477,7 +1506,7 @@ export default function AdminBOQPage() {
                                   />
                                 </div>
                                 <div className="space-y-2">
-                                  <Label htmlFor={`item-unitRate-${sectionIndex}-${itemIndex}`}>Unit Rate (₹)</Label>
+                                  <Label htmlFor={`item-unitRate-${sectionIndex}-${itemIndex}`}>Unit Rate ($)</Label>
                                   <Input
                                     id={`item-unitRate-${sectionIndex}-${itemIndex}`}
                                     type="number"
@@ -1594,7 +1623,7 @@ export default function AdminBOQPage() {
                               </div>
                               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded flex justify-between items-center">
                                 <span className="font-medium">Item Total:</span>
-                                <span className="font-bold text-lg text-blue-600">₹{item.totalAmount.toLocaleString()}</span>
+                                <span className="font-bold text-lg text-blue-600">${item.totalAmount.toLocaleString()}</span>
                               </div>
                             </CardContent>
                           </Card>
@@ -1647,7 +1676,7 @@ export default function AdminBOQPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit BOQ Dialog - Similar to Create but with existing data */}
+      {/* Edit BOQ Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-6xl bg-white border-2 border-gray-200 shadow-2xl">
           <DialogHeader className="bg-white border-b border-gray-200 pb-4">
@@ -1660,10 +1689,291 @@ export default function AdminBOQPage() {
           </DialogHeader>
 
           <div className="space-y-6 bg-white max-h-96 overflow-y-auto">
-            {/* Same form content as Create BOQ Dialog */}
-            <div className="text-center py-4 text-gray-600">
-              Edit form content would be identical to create form with pre-filled data
+            {/* BOQ Basic Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-project">Project *</Label>
+                <Select
+                  value={boqForm.projectId}
+                  onValueChange={(value) => setBoqForm({ ...boqForm, projectId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-customer">Customer *</Label>
+                <Select
+                  value={boqForm.customerId}
+                  onValueChange={(value) => setBoqForm({ ...boqForm, customerId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        {customer.companyName} {/* Ab companyName show ho raha hai */}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="edit-title">BOQ Title *</Label>
+                <Input
+                  id="edit-title"
+                  value={boqForm.title}
+                  onChange={(e) => setBoqForm({ ...boqForm, title: e.target.value })}
+                  placeholder="Enter BOQ title"
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Textarea
+                  id="edit-description"
+                  value={boqForm.description}
+                  onChange={(e) => setBoqForm({ ...boqForm, description: e.target.value })}
+                  placeholder="Enter BOQ description"
+                  rows={3}
+                />
+              </div>
             </div>
+
+            {/* Terms */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-validity">Validity Period (days)</Label>
+                <Input
+                  id="edit-validity"
+                  type="number"
+                  value={boqForm.validityPeriod}
+                  onChange={(e) => setBoqForm({ ...boqForm, validityPeriod: parseInt(e.target.value) || 30 })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-discount">Discount (%)</Label>
+                <Input
+                  id="edit-discount"
+                  type="number"
+                  step="0.01"
+                  value={boqForm.discountPercentage}
+                  onChange={(e) => setBoqForm({ ...boqForm, discountPercentage: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="edit-payment-terms">Payment Terms</Label>
+                <Textarea
+                  id="edit-payment-terms"
+                  value={boqForm.paymentTerms}
+                  onChange={(e) => setBoqForm({ ...boqForm, paymentTerms: e.target.value })}
+                  placeholder="Enter payment terms"
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="edit-delivery-terms">Delivery Terms</Label>
+                <Textarea
+                  id="edit-delivery-terms"
+                  value={boqForm.deliveryTerms}
+                  onChange={(e) => setBoqForm({ ...boqForm, deliveryTerms: e.target.value })}
+                  placeholder="Enter delivery terms"
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            {/* BOQ Sections */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">BOQ Sections</h3>
+                <Button onClick={handleAddSection} variant="outline" size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Section
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {boqForm.sections.map((section, sectionIndex) => (
+                  <Card key={section.id}>
+                    <CardHeader className="bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 space-y-2">
+                          <Input
+                            placeholder="Section title"
+                            value={section.title}
+                            onChange={(e) => handleUpdateSection(sectionIndex, 'title', e.target.value)}
+                          />
+                          <Input
+                            placeholder="Section description (optional)"
+                            value={section.description || ''}
+                            onChange={(e) => handleUpdateSection(sectionIndex, 'description', e.target.value)}
+                          />
+                        </div>
+                        <Button
+                          onClick={() => handleRemoveSection(sectionIndex)}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 ml-4"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium">Items</h4>
+                        <Button onClick={() => handleAddItem(sectionIndex)} variant="outline" size="sm">
+                          <PlusCircle className="h-4 w-4 mr-2" />
+                          Add Item
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {section.items.map((item, itemIndex) => (
+                          <Card key={item.id} className="border border-gray-200">
+                            <CardHeader className="pb-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium text-sm">Item {item.itemNumber}</span>
+                                  <Badge variant="outline" className="capitalize text-xs">
+                                    {item.type}
+                                  </Badge>
+                                </div>
+                                <Button
+                                  onClick={() => handleRemoveItem(sectionIndex, itemIndex)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <MinusCircle className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="space-y-2">
+                                  <Label>Description</Label>
+                                  <Input
+                                    value={item.description}
+                                    onChange={(e) => handleUpdateItem(sectionIndex, itemIndex, 'description', e.target.value)}
+                                    placeholder="Enter item description"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Unit</Label>
+                                  <Input
+                                    value={item.unit}
+                                    onChange={(e) => handleUpdateItem(sectionIndex, itemIndex, 'unit', e.target.value)}
+                                    placeholder="e.g., m², kg, nos"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Quantity</Label>
+                                  <Input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) => handleUpdateItem(sectionIndex, itemIndex, 'quantity', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Unit Rate ($)</Label>
+                                  <Input
+                                    type="number"
+                                    value={item.unitRate}
+                                    onChange={(e) => handleUpdateItem(sectionIndex, itemIndex, 'unitRate', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Main Category</Label>
+                                  <Select
+                                    value={item.mainCategory}
+                                    onValueChange={(value) => handleUpdateItem(sectionIndex, itemIndex, 'mainCategory', value)}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select main category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="civil_works">Civil Works</SelectItem>
+                                      <SelectItem value="electrical">Electrical</SelectItem>
+                                      <SelectItem value="mechanical">Mechanical</SelectItem>
+                                      <SelectItem value="plumbing">Plumbing</SelectItem>
+                                      <SelectItem value="hvac">HVAC</SelectItem>
+                                      <SelectItem value="fire_safety">Fire Safety</SelectItem>
+                                      <SelectItem value="security">Security</SelectItem>
+                                      <SelectItem value="finishing">Finishing</SelectItem>
+                                      <SelectItem value="landscaping">Landscaping</SelectItem>
+                                      <SelectItem value="other">Other</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Sub Category</Label>
+                                  <Select
+                                    value={item.subCategory}
+                                    onValueChange={(value) => handleUpdateItem(sectionIndex, itemIndex, 'subCategory', value)}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select sub category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getSubCategoriesForMain(item.mainCategory).map((subCat) => (
+                                        <SelectItem key={subCat.value} value={subCat.value}>
+                                          {subCat.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded flex justify-between items-center">
+                                <span className="font-medium">Item Total:</span>
+                                <span className="font-bold text-lg text-blue-600">${item.totalAmount.toLocaleString()}</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 p-3 bg-gray-50 rounded flex justify-between items-center">
+                        <span className="font-medium">Section Subtotal:</span>
+                        <span className="font-bold text-lg">${section.subtotal.toLocaleString()}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* BOQ Total Preview */}
+            {boqForm.sections.length > 0 && (
+              <Card className="bg-blue-50 border-blue-200">
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">BOQ Total Preview:</span>
+                    <span className="text-2xl font-bold text-blue-600">
+                      ${calculateBOQTotals(boqForm.sections, boqForm.discountPercentage, boqForm.taxPercentage).totalAmount.toLocaleString()}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <DialogFooter className="bg-gray-50 -m-6 mt-4 p-6 rounded-b-lg border-t">
