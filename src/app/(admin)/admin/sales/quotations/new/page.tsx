@@ -1,3 +1,5 @@
+"use client";
+
 // 'use client';
 
 // import { useState, useRef, useEffect, useCallback } from 'react';
@@ -39,6 +41,10 @@
 // // Firebase imports
 // import { db } from '@/lib/firebase';
 // import { collection, addDoc } from 'firebase/firestore';
+
+import { generateQuotationPDF, downloadPDF } from '@/lib/pdf-generator';
+import { saveQuotationDefaultsToCloud, loadQuotationDefaultsFromCloud } from '@/lib/quotationDefaults';
+import { useAuthStore } from '@/stores/auth';
 
 // // Mock data
 // const mockData = {
@@ -6165,7 +6171,6 @@
 
 
 // new code
-'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6462,39 +6467,41 @@ export default function NewQuotationPage() {
     terms: ''
   });
 
-  const [sections, setSections] = useState<QuotationSection[]>([
-    {
-      id: 'cover_page',
-      type: 'cover_page',
-      title: 'Cover Page & Letter',
-      enabled: true,
-      order: 1,
-      data: {
-        companyLogo: companySettings.logoUrl,
-        companyName: companySettings.companyName,
-        companyAddress: `${companySettings.address.street}, ${companySettings.address.city}, ${companySettings.address.state} ${companySettings.address.zipCode}, ${companySettings.address.country}`,
-        companyPhone: companySettings.contact.phone,
-        companyEmail: companySettings.contact.email,
-        companyWebsite: companySettings.contact.website,
-        date: new Date().toISOString().split('T')[0],
-        recipientName: '',
-        recipientCompany: '',
-        recipientAddress: '',
-        recipientPhone: '',
-        recipientEmail: '',
-        subject: 'Proposal for Professional Services',
-        salutation: 'Dear [Recipient Name],',
-        letterContent: `We are pleased to submit this comprehensive proposal for your consideration. Our team has carefully analyzed your requirements and developed a tailored solution that meets your specific needs.
+  const [sections, setSections] = useState<QuotationSection[]>(() => {
+    // base/default sections
+    const baseSections: QuotationSection[] = [
+      {
+        id: 'cover_page',
+        type: 'cover_page',
+        title: 'Cover Page & Letter',
+        enabled: true,
+        order: 1,
+        data: {
+          companyLogo: companySettings.logoUrl,
+          companyName: companySettings.companyName,
+          companyAddress: `${companySettings.address.street}, ${companySettings.address.city}, ${companySettings.address.state} ${companySettings.address.zipCode}, ${companySettings.address.country}`,
+          companyPhone: companySettings.contact.phone,
+          companyEmail: companySettings.contact.email,
+          companyWebsite: companySettings.contact.website,
+          date: new Date().toISOString().split('T')[0],
+          recipientName: '',
+          recipientCompany: '',
+          recipientAddress: '',
+          recipientPhone: '',
+          recipientEmail: '',
+          subject: 'Quotation for Electronic & Hardware Products',
+          salutation: 'Dear [Recipient Name],',
+          letterContent: `We are pleased to submit this comprehensive proposal for your consideration. Our team has carefully analyzed your requirements and developed a tailored solution that meets your specific needs.
 
 This proposal outlines our understanding of your project requirements, our proposed solution, detailed specifications, pricing structure, and implementation timeline.
 
 We look forward to the opportunity to work with you and deliver exceptional results.`,
-        senderName: 'John Smith',
-        senderTitle: 'Business Development Manager',
-        senderPhone: '+971 50 123 4567',
-        senderEmail: 'john.smith@sbrtech.com'
-      }
-    },
+          senderName: 'John Smith',
+          senderTitle: 'Business Development Manager',
+          senderPhone: '+971 50 123 4567',
+          senderEmail: 'john.smith@sbrtech.com'
+        }
+      },
     {
       id: 'executive_summary',
       type: 'executive_summary',
@@ -6656,22 +6663,30 @@ This solution will transform your operations, improve efficiency, and position y
       }
     },
     {
-      id: 'product_specifications',
-      type: 'product_specifications',
-      title: 'Product & Service Specifications',
+  id: 'product_specifications',
+  type: 'product_specifications',
+  title: 'Hardware & Electronics Specifications',
       enabled: true,
       order: 6,
       data: {
         products: [] as ProductDetail[],
         technicalSpecifications: {
-          platform: 'Web-based SaaS Platform',
-          technology: 'React, Node.js, PostgreSQL, AWS Cloud',
-          mobileSupport: 'Responsive design for all devices',
-          browserSupport: 'Chrome, Firefox, Safari, Edge (latest versions)',
-          apiIntegration: 'RESTful APIs with OAuth 2.0 authentication',
-          dataSecurity: 'AES-256 encryption, SSL/TLS, GDPR compliance',
-          backup: 'Automated daily backups with disaster recovery',
-          uptime: '99.9% SLA with 24/7 monitoring'
+          platform: 'Embedded Hardware (MCU-based)',
+          processor: 'ARM Cortex-M4 (or equivalent)',
+          firmware: 'RTOS-based firmware (C/C++)',
+          connectivity: 'Wi-Fi 802.11ac / BLE 5.0 / Ethernet (optional)',
+          powerRequirements: '12V DC / 5W typical (specify per model)',
+          operatingTemperature: '-20°C to 60°C',
+          storageTemperature: '-40°C to 85°C',
+          humidity: '0% - 95% non-condensing',
+          ingressProtection: 'IP20 (indoor) or IP54/IP65 options available',
+          certifications: ['CE', 'FCC', 'RoHS'],
+          compliance: 'EMC and safety standards as applicable',
+          mobileAppSupport: 'iOS and Android companion app available',
+          webPortal: 'Management portal (Chrome, Firefox, Edge, Safari latest)',
+          apiIntegration: 'RESTful API with token-based auth (OAuth2 optional)',
+          warranty: '12 months standard manufacturer warranty',
+          notes: 'Lead times depend on component availability; custom configurations available on request.'
         },
         serviceSpecifications: [
           {
@@ -6824,11 +6839,22 @@ This solution will transform your operations, improve efficiency, and position y
       enabled: true,
       order: 9,
       data: {
-        generalTerms: `1. **Acceptance**: This proposal constitutes the entire agreement between the parties.
-2. **Validity**: This proposal is valid for 30 days from the date of submission.
-3. **Payment Terms**: All payments must be made according to the agreed schedule.
-4. **Intellectual Property**: All deliverables remain the property of the client upon full payment.
-5. **Confidentiality**: Both parties agree to maintain confidentiality of proprietary information.`,
+  generalTerms: `1. Acceptance: This quotation outlines the supply of electronic and hardware products as specified. Acceptance requires written confirmation and an authorised purchase order.
+
+2. Validity: This quotation is valid for 30 days from the date issued unless otherwise stated.
+
+3. Pricing & Taxes: Prices quoted are exclusive of applicable taxes, customs duties, and import fees unless specified. Any changes in tax or duty after quotation issue may be passed on to the customer.
+
+4. Payment Terms: Unless otherwise agreed in writing, payment terms are Net 30 days from invoice date. Late payments beyond the agreed terms may incur a finance charge of 1.5% per month on the outstanding balance.
+
+5. Delivery & Lead Times: Lead times are estimates and subject to supplier and component availability. Expedited delivery requests may attract additional charges and are subject to feasibility.
+
+6. Warranty & Returns: Standard manufacturer warranty applies to hardware items (typically 12 months from delivery) unless a different warranty term is specified per product. Returns for defective goods are subject to inspection and an RMA (Return Merchandise Authorization). Non-defective returns are accepted within 14 days of delivery and may be subject to restocking fees.
+
+7. Shipping & Risk: Title and risk transfer to the buyer upon delivery at the agreed delivery point unless otherwise specified (Incoterms apply when stated).
+
+8. Exclusions & Liability: SBR's liability for direct damages is limited to the value of the supplied goods; indirect or consequential losses are excluded to the fullest extent permitted by law.
+`,
         warranties: [
           {
             item: 'Software Functionality',
@@ -6937,10 +6963,35 @@ This solution will transform your operations, improve efficiency, and position y
         additionalNotes: ''
       }
     }
-  ]);
+  ];
+  const defaultsKey = 'quotationDefaults';
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(defaultsKey);
+        if (raw) {
+          const defaults = JSON.parse(raw);
+          const merged = baseSections.map((s) => {
+            const def = defaults && defaults[s.id];
+            if (!def) return s;
+            if (s.id === 'quotation_items') {
+              // keep items empty by default for new quotations
+              return { ...s, data: { ...s.data, ...def, items: s.data.items || [] } };
+            }
+            return { ...s, data: { ...s.data, ...def } };
+          });
+          return merged;
+        }
+      }
+    } catch (e) {
+      // ignore JSON / storage errors
+    }
+    return baseSections;
+  });
 
   const [draggedSection, setDraggedSection] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const saveCloudTimeout = useRef<any | null>(null);
+  const currentUser = useAuthStore((s) => s.user);
 
   // Auto-fill customer details when customer is selected
   useEffect(() => {
@@ -6973,7 +7024,7 @@ This solution will transform your operations, improve efficiency, and position y
         }
       }
     }
-  }, [quotationData.customerId, customers]);
+  }, [quotationData.customerId, customers, currentUser]);
 
   // Calculate totals function with useCallback to prevent infinite re-renders
   const calculateTotals = useCallback(() => {
@@ -7020,6 +7071,27 @@ This solution will transform your operations, improve efficiency, and position y
     calculateTotals();
   }, [calculateTotals]);
 
+  // Load cloud-saved quotation defaults (if available) when user loads page
+  useEffect(() => {
+    (async () => {
+      if (!currentUser || !currentUser.id) return;
+      try {
+        const cloud = await loadQuotationDefaultsFromCloud(currentUser.id);
+        if (cloud) {
+          const merged = sections.map((s) => {
+            const def = cloud && cloud[s.id];
+            if (!def) return s;
+            if (s.id === 'quotation_items') return { ...s, data: { ...s.data, ...def, items: s.data.items || [] } };
+            return { ...s, data: { ...s.data, ...def } };
+          });
+          setSections(merged);
+        }
+      } catch (e) {
+        console.warn('Unable to load cloud defaults', e);
+      }
+    })();
+  }, [currentUser]);
+
   const moveSection = (fromIndex: number, toIndex: number) => {
     const newSections = [...sections];
     const [moved] = newSections.splice(fromIndex, 1);
@@ -7033,19 +7105,58 @@ This solution will transform your operations, improve efficiency, and position y
   };
 
   const toggleSection = (sectionId: string) => {
-    setSections(sections.map(section =>
+    const updated = sections.map(section =>
       section.id === sectionId
         ? { ...section, enabled: !section.enabled }
         : section
-    ));
+    );
+    setSections(updated);
+    // Persist the section's enabled state via updateSectionData (will trigger cloud save as well)
+    const sec = updated.find(s => s.id === sectionId);
+    if (sec) updateSectionData(sectionId, { enabled: sec.enabled });
   };
 
   const updateSectionData = (sectionId: string, data: any) => {
-    setSections(sections.map(section =>
+    const updated = sections.map(section =>
       section.id === sectionId
         ? { ...section, data: { ...section.data, ...data } }
         : section
-    ));
+    );
+    setSections(updated);
+
+    // Persist defaults for all sections except the live quotation items
+    try {
+      if (typeof window !== 'undefined') {
+        const key = 'quotationDefaults';
+        const raw = localStorage.getItem(key);
+        const defaults = raw ? JSON.parse(raw) : {};
+        if (sectionId !== 'quotation_items') {
+          const sec = updated.find(s => s.id === sectionId);
+          if (sec) {
+            defaults[sectionId] = sec.data;
+            localStorage.setItem(key, JSON.stringify(defaults));
+          }
+        }
+      }
+    } catch (e) {
+      // ignore storage errors
+    }
+    // Persist defaults to cloud (debounced) for non-items sections
+    try {
+      if (typeof window !== 'undefined' && currentUser && currentUser.id && sectionId !== 'quotation_items') {
+        const payload = updated.reduce((acc: any, s) => {
+          if (s.id === 'quotation_items') return acc;
+          acc[s.id] = s.data;
+          return acc;
+        }, {});
+        if (saveCloudTimeout.current) clearTimeout(saveCloudTimeout.current);
+        saveCloudTimeout.current = setTimeout(() => {
+          saveQuotationDefaultsToCloud(currentUser.id, payload).catch(err => console.warn('Failed to save quotation defaults to cloud', err));
+        }, 900);
+      }
+    } catch (err) {
+      // ignore cloud errors silently
+    }
   };
 
   const addProductDetail = () => {
@@ -7257,270 +7368,22 @@ This solution will transform your operations, improve efficiency, and position y
   const generatePDF = async () => {
     setLoading(true);
     try {
-      // Create a new PDF instance
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      let currentPage = 1;
-      const pageHeight = pdf.internal.pageSize.height;
-      const pageWidth = pdf.internal.pageSize.width;
-      const margin = 20;
-      let yPosition = margin;
+      const enabledSections = sections.filter((s: any) => s.enabled);
+      const customer = customers.find((c: any) => c.id === quotationData.customerId);
 
-      // Get enabled sections
-      const enabledSections = sections.filter(s => s.enabled);
-      const customer = customers.find(c => c.id === quotationData.customerId);
+      // Use centralized professional PDF generator
+      const coverSection = sections.find((s: any) => s.type === 'cover_page');
+      const accentColor = coverSection?.data?.accentColor || coverSection?.data?.primaryColor || '#0f60d9';
+      const headerColor = coverSection?.data?.headerColor || coverSection?.data?.primaryColor || '#0b4bd8';
 
-      // Helper function to add text with page break
-      const addTextWithPageBreak = (text: string, fontSize: number = 12, isBold: boolean = false, lineHeight: number = 7) => {
-        pdf.setFontSize(fontSize);
-        pdf.setFont(isBold ? 'helvetica' : 'helvetica', isBold ? 'bold' : 'normal');
-        
-        const lines = pdf.splitTextToSize(text, pageWidth - 2 * margin);
-        
-        for (let i = 0; i < lines.length; i++) {
-          if (yPosition + lineHeight > pageHeight - margin) {
-            pdf.addPage();
-            currentPage++;
-            yPosition = margin;
-          }
-          pdf.text(lines[i], margin, yPosition);
-          yPosition += lineHeight;
-        }
-        yPosition += 2;
-      };
+      const blob = await generateQuotationPDF(
+        quotationData,
+        enabledSections,
+        customer,
+        { accentColor, headerColor, formatAmount }
+      );
 
-      // Helper function to add section header
-      const addSectionHeader = (title: string) => {
-        if (yPosition + 15 > pageHeight - margin) {
-          pdf.addPage();
-          currentPage++;
-          yPosition = margin;
-        }
-        addTextWithPageBreak(title, 16, true, 10);
-        pdf.setDrawColor(200, 200, 200);
-        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-        yPosition += 5;
-      };
-
-      // Cover Page
-      addSectionHeader('QUOTATION PROPOSAL');
-      yPosition += 10;
-
-      // Company Information
-      const coverSection = sections.find(s => s.type === 'cover_page');
-      if (coverSection) {
-        addTextWithPageBreak(coverSection.data.companyName, 14, true);
-        addTextWithPageBreak(coverSection.data.companyAddress, 10);
-        addTextWithPageBreak(`Phone: ${coverSection.data.companyPhone}`, 10);
-        addTextWithPageBreak(`Email: ${coverSection.data.companyEmail}`, 10);
-        addTextWithPageBreak(`Website: ${coverSection.data.companyWebsite}`, 10);
-        yPosition += 10;
-      }
-
-      // Recipient Information
-      if (customer) {
-        addTextWithPageBreak('To:', 12, true);
-        addTextWithPageBreak(customer.primaryContact.name, 12);
-        addTextWithPageBreak(customer.companyName, 12);
-        addTextWithPageBreak(`Email: ${customer.primaryContact.email}`, 10);
-        addTextWithPageBreak(`Phone: ${customer.primaryContact.phone}`, 10);
-        yPosition += 10;
-      }
-
-      // Quotation Details
-      addTextWithPageBreak(`Quotation Number: ${quotationData.quotationNumber}`, 12);
-      addTextWithPageBreak(`Issue Date: ${new Date(quotationData.issueDate).toLocaleDateString()}`, 12);
-      addTextWithPageBreak(`Valid Until: ${new Date(quotationData.validUntil).toLocaleDateString()}`, 12);
-      yPosition += 15;
-
-      // Cover Letter
-      if (coverSection?.data.letterContent) {
-        addTextWithPageBreak('Dear Valued Client,', 12);
-        addTextWithPageBreak(coverSection.data.letterContent, 11);
-        yPosition += 10;
-      }
-
-      // Process each enabled section
-      for (const section of enabledSections) {
-        if (section.type === 'cover_page') continue; // Skip cover page as we already processed it
-        
-        // Add page break for new section
-        if (yPosition + 30 > pageHeight - margin) {
-          pdf.addPage();
-          currentPage++;
-          yPosition = margin;
-        }
-
-        addSectionHeader(section.title.toUpperCase());
-
-        switch (section.type) {
-          case 'executive_summary':
-            if (section.data.summary) {
-              addTextWithPageBreak(section.data.summary, 11);
-            }
-            if (section.data.keyBenefits && section.data.keyBenefits.length > 0) {
-              yPosition += 5;
-              addTextWithPageBreak('Key Benefits:', 12, true);
-              section.data.keyBenefits.forEach((benefit: string) => {
-                addTextWithPageBreak(`• ${benefit}`, 11);
-              });
-            }
-            break;
-
-          case 'company_introduction':
-            if (section.data.description) {
-              addTextWithPageBreak(section.data.description, 11);
-            }
-            if (section.data.achievements && section.data.achievements.length > 0) {
-              yPosition += 5;
-              addTextWithPageBreak('Achievements:', 12, true);
-              section.data.achievements.forEach((achievement: string) => {
-                addTextWithPageBreak(`• ${achievement}`, 11);
-              });
-            }
-            break;
-
-          case 'problem_statement':
-            if (section.data.currentSituation) {
-              addTextWithPageBreak(section.data.currentSituation, 11);
-            }
-            if (section.data.objectives && section.data.objectives.length > 0) {
-              yPosition += 5;
-              addTextWithPageBreak('Objectives:', 12, true);
-              section.data.objectives.forEach((objective: string) => {
-                addTextWithPageBreak(`• ${objective}`, 11);
-              });
-            }
-            break;
-
-          case 'solution_details':
-            if (section.data.solutionOverview) {
-              addTextWithPageBreak(section.data.solutionOverview, 11);
-            }
-            if (section.data.keyFeatures && section.data.keyFeatures.length > 0) {
-              yPosition += 5;
-              addTextWithPageBreak('Key Features:', 12, true);
-              section.data.keyFeatures.forEach((feature: string) => {
-                addTextWithPageBreak(`• ${feature}`, 11);
-              });
-            }
-            break;
-
-          case 'product_specifications':
-            if (section.data.products && section.data.products.length > 0) {
-              addTextWithPageBreak('Products & Services:', 12, true);
-              section.data.products.forEach((product: ProductDetail, index: number) => {
-                const selectedProduct = products.find(p => p.id === product.productId);
-                if (selectedProduct) {
-                  addTextWithPageBreak(`${index + 1}. ${selectedProduct.name}`, 11, true);
-                  addTextWithPageBreak(`   Description: ${product.description || selectedProduct.description}`, 10);
-                  addTextWithPageBreak(`   Quantity: ${product.quantity}`, 10);
-                  addTextWithPageBreak(`   Unit Price: ${formatAmount(product.unitPrice)}`, 10);
-                  addTextWithPageBreak(`   Discount: ${product.discount}%`, 10);
-                  const lineTotal = (product.quantity * product.unitPrice) * (1 - product.discount / 100);
-                  addTextWithPageBreak(`   Line Total: ${formatAmount(lineTotal)}`, 10);
-                  yPosition += 2;
-                }
-              });
-            }
-            break;
-
-          case 'quotation_items':
-            if (section.data.items && section.data.items.length > 0) {
-              addTextWithPageBreak('Quotation Items:', 12, true);
-              
-              // Table header
-              const tableTop = yPosition;
-              pdf.setFontSize(10);
-              pdf.setFont('helvetica', 'bold');
-              pdf.text('Item', margin, yPosition);
-              pdf.text('Description', margin + 30, yPosition);
-              pdf.text('Qty', margin + 100, yPosition);
-              pdf.text('Rate', margin + 120, yPosition);
-              pdf.text('Amount', margin + 150, yPosition);
-              yPosition += 5;
-              pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-              yPosition += 3;
-
-              // Table rows
-              pdf.setFont('helvetica', 'normal');
-              section.data.items.forEach((item: QuotationItem, index: number) => {
-                if (yPosition + 15 > pageHeight - margin) {
-                  pdf.addPage();
-                  currentPage++;
-                  yPosition = margin + 20;
-                }
-                
-                pdf.text((index + 1).toString(), margin, yPosition);
-                pdf.text(item.productName.substring(0, 20), margin + 10, yPosition);
-                pdf.text(item.description.substring(0, 25), margin + 30, yPosition);
-                pdf.text(item.quantity.toString(), margin + 100, yPosition);
-                pdf.text(formatAmount(item.rate), margin + 120, yPosition);
-                pdf.text(formatAmount(item.amount), margin + 150, yPosition);
-                yPosition += 6;
-              });
-
-              yPosition += 10;
-
-              // Summary
-              addTextWithPageBreak('Summary:', 12, true);
-              addTextWithPageBreak(`Subtotal: ${formatAmount(section.data.subtotal)}`, 11);
-              addTextWithPageBreak(`Discount: -${formatAmount(section.data.totalDiscount)}`, 11);
-              addTextWithPageBreak(`Tax: ${formatAmount(section.data.totalTax)}`, 11);
-              addTextWithPageBreak(`Service Charges: ${formatAmount(section.data.serviceCharges)}`, 11);
-              addTextWithPageBreak(`Grand Total: ${formatAmount(section.data.grandTotal)}`, 14, true);
-            }
-            break;
-
-          case 'timeline_schedule':
-            if (section.data.phases && section.data.phases.length > 0) {
-              addTextWithPageBreak('Project Timeline:', 12, true);
-              section.data.phases.forEach((phase: any, index: number) => {
-                addTextWithPageBreak(`${index + 1}. ${phase.name} (${phase.duration})`, 11, true);
-                if (phase.deliverables && phase.deliverables.length > 0) {
-                  phase.deliverables.forEach((deliverable: string) => {
-                    addTextWithPageBreak(`   • ${deliverable}`, 10);
-                  });
-                }
-                yPosition += 2;
-              });
-            }
-            break;
-
-          case 'terms_warranties':
-            if (section.data.generalTerms) {
-              addTextWithPageBreak('Terms & Conditions:', 12, true);
-              addTextWithPageBreak(section.data.generalTerms, 10);
-            }
-            break;
-
-          case 'contact_information':
-            if (section.data.companyContacts && section.data.companyContacts.length > 0) {
-              addTextWithPageBreak('Contact Information:', 12, true);
-              section.data.companyContacts.forEach((contact: any) => {
-                addTextWithPageBreak(`${contact.name} - ${contact.title}`, 11);
-                addTextWithPageBreak(`Phone: ${contact.phone} | Email: ${contact.email}`, 10);
-                yPosition += 2;
-              });
-            }
-            break;
-        }
-
-        yPosition += 10;
-      }
-
-  // Footer with page numbers
-  const totalPages = (pdf.internal as any).getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(8);
-        pdf.setTextColor(128, 128, 128);
-        pdf.text(`Page ${i} of ${totalPages}`, pageWidth - margin - 20, pageHeight - 10);
-        pdf.text(`Generated on ${new Date().toLocaleDateString()}`, margin, pageHeight - 10);
-      }
-
-      // Save the PDF
-      pdf.save(`quotation-${quotationData.quotationNumber}.pdf`);
-      
+      downloadPDF(blob, `quotation-${quotationData.quotationNumber || Date.now()}.pdf`);
       alert('PDF generated successfully!');
     } catch (error) {
       console.error('Error generating PDF:', error);
